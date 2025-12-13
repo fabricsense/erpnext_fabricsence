@@ -1,0 +1,17 @@
+name: Trigger Build Develop
+on:
+  push:
+    branches:
+      - develop
+jobs:
+  trigger:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger build workflow in fabric-builder-portainer develop branch
+        run: |
+          curl -X POST \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: token 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" \
+            -d '{"ref":"develop"}' \
+            https://api.github.com/repos/InnogenioSolutions/fabric-builder-portainer/actions/workflows/build.yaml/dispatches
+      

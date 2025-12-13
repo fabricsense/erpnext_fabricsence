@@ -1,0 +1,190 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "naming_series:",
+ "creation": "2025-01-15 10:00:00",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "basic_information_section",
+  "naming_series",
+  "customer",
+  "project",
+  "column_break_bbjf",
+  "status",
+  "measurement_date",
+  "measurement_method",
+  "contractor_assignment_section",
+  "assigned_contractor",
+  "expected_measurement_date",
+  "site_visit_required",
+  "visiting_charge",
+  "actual_measurement_date",
+  "measurement_details_section",
+  "measurement_details",
+  "summary_section",
+  "total_amount",
+  "rejection_reason"
+ ],
+ "fields": [
+  {
+   "fieldname": "basic_information_section",
+   "fieldtype": "Section Break",
+   "label": "Basic Information"
+  },
+  {
+   "fieldname": "naming_series",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Series",
+   "options": "MS-.YYYY.-.####",
+   "reqd": 1
+  },
+  {
+   "fieldname": "customer",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Customer",
+   "options": "Customer",
+   "read_only_depends_on": "eval:doc.status == 'Approved'",
+   "reqd": 1
+  },
+  {
+   "fieldname": "project",
+   "fieldtype": "Link",
+   "label": "Project",
+   "options": "Project",
+   "read_only_depends_on": "eval:doc.status == 'Approved'"
+  },
+  {
+   "fieldname": "measurement_date",
+   "fieldtype": "Date",
+   "in_list_view": 1,
+   "label": "Measurement Date",
+   "read_only_depends_on": "eval:doc.status == 'Approved'",
+   "reqd": 1
+  },
+  {
+   "default": "Draft",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "label": "Status",
+   "options": "Draft\nCustomer Approval Pending\nApproved\nRejected"
+  },
+  {
+   "fieldname": "measurement_method",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Measurement Method",
+   "options": "\nCustomer Provided\nContractor Assigned",
+   "read_only_depends_on": "eval:doc.status == 'Approved'",
+   "reqd": 1
+  },
+  {
+   "depends_on": "eval:doc.measurement_method=='Contractor Assigned'",
+   "fieldname": "contractor_assignment_section",
+   "fieldtype": "Section Break",
+   "label": "Contractor Assignment"
+  },
+  {
+   "depends_on": "eval:doc.measurement_method=='Contractor Assigned'",
+   "fieldname": "assigned_contractor",
+   "fieldtype": "Link",
+   "label": "Assigned Contractor",
+   "options": "Employee",
+   "read_only_depends_on": "eval:doc.status == 'Approved'"
+  },
+  {
+   "depends_on": "eval:doc.measurement_method=='Contractor Assigned'",
+   "fieldname": "expected_measurement_date",
+   "fieldtype": "Date",
+   "label": "Expected Measurement Date",
+   "read_only_depends_on": "eval:doc.status == 'Approved'"
+  },
+  {
+   "depends_on": "eval:doc.measurement_method=='Contractor Assigned'",
+   "fieldname": "actual_measurement_date",
+   "fieldtype": "Date",
+   "label": "Actual Measurement Date",
+   "read_only_depends_on": "eval:doc.status == 'Approved'"
+  },
+  {
+   "default": "0",
+   "depends_on": "eval:doc.measurement_method=='Contractor Assigned'",
+   "fieldname": "site_visit_required",
+   "fieldtype": "Check",
+   "label": "Site Visit Required",
+   "read_only_depends_on": "eval:doc.status == 'Approved'"
+  },
+  {
+   "depends_on": "eval:doc.measurement_method=='Contractor Assigned' && doc.site_visit_required==1",
+   "fieldname": "visiting_charge",
+   "fieldtype": "Currency",
+   "label": "Visiting Charge",
+   "read_only_depends_on": "eval:doc.status == 'Approved'"
+  },
+  {
+   "fieldname": "measurement_details_section",
+   "fieldtype": "Section Break",
+   "label": "Measurement Details"
+  },
+  {
+   "fieldname": "measurement_details",
+   "fieldtype": "Table",
+   "label": "Measurement Details",
+   "options": "Measurement Detail",
+   "read_only_depends_on": "eval:doc.status == 'Approved'",
+   "reqd": 1
+  },
+  {
+   "fieldname": "summary_section",
+   "fieldtype": "Section Break",
+   "label": "Summary"
+  },
+  {
+   "fieldname": "total_amount",
+   "fieldtype": "Currency",
+   "label": "Total Amount",
+   "read_only": 1
+  },
+  {
+   "depends_on": "eval:doc.status=='Rejected'",
+   "fieldname": "rejection_reason",
+   "fieldtype": "Text",
+   "label": "Rejection Reason",
+   "read_only_depends_on": "eval:doc.status == 'Approved'"
+  },
+  {
+   "fieldname": "column_break_bbjf",
+   "fieldtype": "Column Break"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2025-12-11 18:58:28.144588",
+ "modified_by": "Administrator",
+ "module": "Fabric Sense",
+ "name": "Measurement Sheet",
+ "naming_rule": "By \"Naming Series\" field",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

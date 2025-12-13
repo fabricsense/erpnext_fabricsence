@@ -1,0 +1,19 @@
+image: atlassian/default-image:latest
+
+pipelines:
+  branches:
+    main:
+      - step:
+          name: Sync main branch to GitHub
+          script:
+            - bash sync-to-github.sh
+    develop:
+      - step:
+          name: Sync develop branch to GitHub
+          script:
+            - bash sync-to-github.sh
+    qa:
+      - step:
+          name: Sync qa branch to GitHub
+          script:
+            - bash sync-to-github.sh

@@ -1,0 +1,397 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2025-12-08 12:05:21.383281",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "area",
+  "product_type",
+  "layer",
+  "column_break_1",
+  "pattern",
+  "design",
+  "dimensions_section",
+  "width",
+  "height",
+  "panels",
+  "column_break_2",
+  "adjust",
+  "square_feet",
+  "items_section",
+  "fabric_selected",
+  "fabric_qty",
+  "fabric_adjust",
+  "final_fabric_quantity",
+  "fabric_rate",
+  "fabric_amount",
+  "selection",
+  "column_break_fabric",
+  "lining",
+  "lining_qty",
+  "lining_adjust",
+  "final_lining_quantity",
+  "lining_rate",
+  "lining_amount",
+  "lead_rope_section",
+  "lead_rope",
+  "lead_rope_qty",
+  "lead_rope_rate",
+  "lead_rope_amount",
+  "column_break_lead",
+  "track_rod",
+  "track_rod_qty",
+  "track_rod_rate",
+  "track_rod_amount",
+  "section_break_smha",
+  "stiching_pattern",
+  "stitching_charge",
+  "column_break_nycr",
+  "fitting_type",
+  "fitting_charge",
+  "pricing_section",
+  "amount"
+ ],
+ "fields": [
+  {
+   "fieldname": "area",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Area",
+   "options": "Area",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "product_type",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Product Type",
+   "options": "Window Curtains\nRoman Blinds\nBlinds\nTracks/Rods",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "depends_on": "eval:['Window Curtains','Roman Blinds'].includes(doc.product_type)",
+   "fieldname": "layer",
+   "fieldtype": "Select",
+   "label": "Layer",
+   "options": "\nFront\nBack\nMain\nSheer",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_1",
+   "fieldtype": "Column Break"
+  },
+  {
+   "depends_on": "eval:['Window Curtains','Roman Blinds'].includes(doc.product_type)",
+   "fieldname": "pattern",
+   "fieldtype": "Link",
+   "label": "Pattern",
+   "options": "Pattern",
+   "read_only": 1
+  },
+  {
+   "depends_on": "eval:doc.product_type=='Tracks/Rods'",
+   "fieldname": "design",
+   "fieldtype": "Data",
+   "label": "Design",
+   "mandatory_depends_on": "eval:doc.product_type=='Tracks/Rods'",
+   "read_only": 1
+  },
+  {
+   "fieldname": "dimensions_section",
+   "fieldtype": "Section Break",
+   "label": "Dimensions"
+  },
+  {
+   "depends_on": "eval:doc.product_type",
+   "fieldname": "width",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Width (inches)",
+   "mandatory_depends_on": "eval:doc.product_type",
+   "read_only": 1
+  },
+  {
+   "depends_on": "eval:['Window Curtains','Roman Blinds','Blinds'].includes(doc.product_type)",
+   "fieldname": "height",
+   "fieldtype": "Float",
+   "label": "Height (inches)",
+   "mandatory_depends_on": "eval:['Window Curtains','Roman Blinds','Blinds'].includes(doc.product_type)",
+   "read_only": 1
+  },
+  {
+   "default": "1",
+   "depends_on": "eval:['Window Curtains','Roman Blinds'].includes(doc.product_type)",
+   "fieldname": "panels",
+   "fieldtype": "Int",
+   "label": "Panels",
+   "mandatory_depends_on": "eval:['Window Curtains','Roman Blinds'].includes(doc.product_type)",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_2",
+   "fieldtype": "Column Break"
+  },
+  {
+   "depends_on": "eval:['Window Curtains','Roman Blinds'].includes(doc.product_type)",
+   "fieldname": "adjust",
+   "fieldtype": "Float",
+   "label": "Adjust",
+   "read_only": 1
+  },
+  {
+   "depends_on": "eval:['Roman Blinds','Blinds'].includes(doc.product_type)",
+   "fieldname": "square_feet",
+   "fieldtype": "Float",
+   "label": "Square Feet",
+   "read_only": 1
+  },
+  {
+   "fieldname": "items_section",
+   "fieldtype": "Section Break",
+   "label": "Items"
+  },
+  {
+   "depends_on": "eval:['Window Curtains','Roman Blinds'].includes(doc.product_type)",
+   "fieldname": "fabric_qty",
+   "fieldtype": "Float",
+   "label": "Fabric Qty (meters)",
+   "precision": "2",
+   "read_only": 1
+  },
+  {
+   "depends_on": "eval:['Window Curtains','Roman Blinds'].includes(doc.product_type)",
+   "fieldname": "fabric_rate",
+   "fieldtype": "Currency",
+   "label": "Fabric Rate",
+   "precision": "2",
+   "read_only": 1
+  },
+  {
+   "depends_on": "eval:['Window Curtains','Roman Blinds'].includes(doc.product_type)",
+   "fieldname": "fabric_amount",
+   "fieldtype": "Currency",
+   "label": "Fabric Amount",
+   "precision": "2",
+   "read_only": 1
+  },
+  {
+   "depends_on": "eval:['Window Curtains','Roman Blinds'].includes(doc.product_type)",
+   "fieldname": "column_break_fabric",
+   "fieldtype": "Column Break"
+  },
+  {
+   "depends_on": "eval:['Window Curtains','Roman Blinds'].includes(doc.product_type)",
+   "fieldname": "lining",
+   "fieldtype": "Link",
+   "label": "Lining Selected",
+   "mandatory_depends_on": "eval:['Window Curtains','Roman Blinds'].includes(doc.product_type)",
+   "options": "Item",
+   "read_only": 1
+  },
+  {
+   "depends_on": "eval:['Window Curtains','Roman Blinds'].includes(doc.product_type)",
+   "fieldname": "lining_qty",
+   "fieldtype": "Float",
+   "label": "Lining Qty (meters)",
+   "precision": "2",
+   "read_only": 1
+  },
+  {
+   "depends_on": "eval:['Window Curtains','Roman Blinds'].includes(doc.product_type)",
+   "fieldname": "lining_rate",
+   "fieldtype": "Currency",
+   "label": "Lining Rate",
+   "precision": "2",
+   "read_only": 1
+  },
+  {
+   "depends_on": "eval:['Window Curtains','Roman Blinds'].includes(doc.product_type)",
+   "fieldname": "lining_amount",
+   "fieldtype": "Currency",
+   "label": "Lining Amount",
+   "precision": "2",
+   "read_only": 1
+  },
+  {
+   "depends_on": "eval:doc.product_type=='Window Curtains'",
+   "fieldname": "lead_rope_section",
+   "fieldtype": "Section Break",
+   "label": "Lead Rope & Stitching"
+  },
+  {
+   "depends_on": "eval:doc.product_type=='Window Curtains'",
+   "fieldname": "lead_rope",
+   "fieldtype": "Link",
+   "label": "Lead Rope Selected",
+   "options": "Item",
+   "read_only": 1
+  },
+  {
+   "depends_on": "eval:doc.product_type=='Window Curtains'",
+   "fieldname": "lead_rope_qty",
+   "fieldtype": "Float",
+   "label": "Lead Rope Qty (meters)",
+   "precision": "2",
+   "read_only": 1
+  },
+  {
+   "depends_on": "eval:doc.product_type=='Window Curtains'",
+   "fieldname": "lead_rope_rate",
+   "fieldtype": "Currency",
+   "label": "Lead Rope Rate",
+   "precision": "2",
+   "read_only": 1
+  },
+  {
+   "depends_on": "eval:doc.product_type=='Window Curtains'",
+   "fieldname": "lead_rope_amount",
+   "fieldtype": "Currency",
+   "label": "Lead Rope Amount",
+   "precision": "2",
+   "read_only": 1
+  },
+  {
+   "depends_on": "eval:doc.product_type=='Window Curtains'",
+   "fieldname": "column_break_lead",
+   "fieldtype": "Column Break"
+  },
+  {
+   "depends_on": "eval:doc.product_type=='Blinds'",
+   "fieldname": "selection",
+   "fieldtype": "Link",
+   "label": "Selection",
+   "options": "Item",
+   "read_only": 1
+  },
+  {
+   "fieldname": "pricing_section",
+   "fieldtype": "Section Break",
+   "label": "Pricing"
+  },
+  {
+   "fieldname": "amount",
+   "fieldtype": "Currency",
+   "in_list_view": 1,
+   "label": "Amount",
+   "read_only": 1
+  },
+  {
+   "depends_on": "eval:['Window Curtains','Roman Blinds'].includes(doc.product_type)",
+   "fieldname": "fabric_adjust",
+   "fieldtype": "Float",
+   "label": "Fabric Adjust",
+   "precision": "2"
+  },
+  {
+   "depends_on": "eval:['Window Curtains','Roman Blinds'].includes(doc.product_type)",
+   "fieldname": "lining_adjust",
+   "fieldtype": "Float",
+   "label": "Lining Adjust",
+   "precision": "2"
+  },
+  {
+   "fieldname": "section_break_smha",
+   "fieldtype": "Section Break",
+   "label": "Service Charges"
+  },
+  {
+   "fieldname": "column_break_nycr",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "final_fabric_quantity",
+   "fieldtype": "Float",
+   "label": "Final Fabric Quantity",
+   "precision": "2",
+   "read_only": 1
+  },
+  {
+   "fieldname": "final_lining_quantity",
+   "fieldtype": "Float",
+   "label": "Final Lining Quantity",
+   "precision": "2",
+   "read_only": 1
+  },
+  {
+   "depends_on": "eval:['Window Curtains','Roman Blinds'].includes(doc.product_type)",
+   "fieldname": "fabric_selected",
+   "fieldtype": "Link",
+   "label": "Fabric Selected",
+   "mandatory_depends_on": "eval:['Window Curtains','Roman Blinds'].includes(doc.product_type)",
+   "options": "Item",
+   "read_only": 1
+  },
+  {
+   "depends_on": "eval:doc.product_type=='Window Curtains'",
+   "fieldname": "track_rod",
+   "fieldtype": "Link",
+   "label": "Hardware (Track/Rod)",
+   "options": "Item",
+   "read_only": 1
+  },
+  {
+   "depends_on": "eval:doc.product_type=='Window Curtains'",
+   "fieldname": "track_rod_qty",
+   "fieldtype": "Float",
+   "label": "Hardware Qty (feet)",
+   "precision": "2",
+   "read_only": 1
+  },
+  {
+   "depends_on": "eval:doc.product_type=='Window Curtains'",
+   "fieldname": "track_rod_rate",
+   "fieldtype": "Currency",
+   "label": "Hardware Rate (per foot)",
+   "precision": "2",
+   "read_only": 1
+  },
+  {
+   "depends_on": "eval:doc.product_type=='Window Curtains'",
+   "fieldname": "track_rod_amount",
+   "fieldtype": "Currency",
+   "label": "Hardware Amount",
+   "precision": "2",
+   "read_only": 1
+  },
+  {
+   "fieldname": "fitting_type",
+   "fieldtype": "Link",
+   "label": "Fitting Type",
+   "options": "Item"
+  },
+  {
+   "fieldname": "fitting_charge",
+   "fieldtype": "Currency",
+   "label": "Fitting Charge"
+  },
+  {
+   "fieldname": "stitching_charge",
+   "fieldtype": "Currency",
+   "label": "Stitching Charge"
+  },
+  {
+   "fieldname": "stiching_pattern",
+   "fieldtype": "Link",
+   "label": "Stiching Pattern",
+   "options": "Item",
+   "read_only": 1
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2025-12-12 12:47:58.628440",
+ "modified_by": "Administrator",
+ "module": "Fabric Sense",
+ "name": "Tailoring Measurement Details",
+ "owner": "Administrator",
+ "permissions": [],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}
