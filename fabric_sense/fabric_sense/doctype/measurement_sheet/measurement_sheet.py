@@ -612,10 +612,15 @@ def _extract_items_from_measurement_details(
         # Add selection item (for Blinds)
         if md_row.selection:
             selection_rate = selection_rates.get(md_row.selection, 0)
+            # For Blinds: use square_feet as quantity
+            if md_row.product_type == "Blinds" and md_row.square_feet:
+                qty = md_row.square_feet
+            else:
+                qty = SELECTION_ITEM_QTY
             items.append(
                 {
                     "item_code": md_row.selection,
-                    "qty": SELECTION_ITEM_QTY,
+                    "qty": qty,
                     "rate": selection_rate,
                     "idx": item_idx,
                 }

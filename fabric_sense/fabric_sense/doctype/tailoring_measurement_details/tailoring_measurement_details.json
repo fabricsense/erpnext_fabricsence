@@ -188,7 +188,6 @@
    "fieldname": "lining",
    "fieldtype": "Link",
    "label": "Lining Selected",
-   "mandatory_depends_on": "eval:['Window Curtains','Roman Blinds'].includes(doc.product_type)",
    "options": "Item",
    "read_only": 1
   },

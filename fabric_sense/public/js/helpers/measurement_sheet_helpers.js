@@ -3,9 +3,9 @@ frappe.provide("fabric_sense.measurement_sheet");
 (function (ns) {
 	const ITEM_GROUPS = {
 		FABRIC: ["Main Fabric", "Sheer Fabric"],
-		LINING: "Lining",
+		LINING: ["Basic Linings", "Heavy Linings"],
 		LEAD_ROPE: "Lead Rope Items",
-		TRACK_ROD: ["Tracks", "Rods", "Tracks & Rods"],
+		TRACK_ROD: ["Tracks", "Rods"],
 		BLINDS: "Blinds",
 		STITCHING: "Stitching",
 		FITTING: "Fitting",
@@ -42,7 +42,9 @@ frappe.provide("fabric_sense.measurement_sheet");
 
 		// Apply standard filters
 		Object.entries(filters).forEach(([field, filter]) => {
-			frm.set_query(field, "measurement_details", () => ({ filters: [filter] }));
+			frm.set_query(field, "measurement_details", function() {
+				return { filters: [filter] };
+			});
 		});
 
 		// Special handling for fabric_selected to include all items under Window Furnishings parent group
@@ -1058,5 +1060,241 @@ frappe.provide("fabric_sense.measurement_sheet");
 					indicator: "red",
 				});
 			});
+	};
+
+	/**
+	 * Validate all mandatory fields before save
+	 * Returns array of error objects with fieldname and message
+	 */
+	ns.validate_mandatory_fields = function validate_mandatory_fields(frm) {
+		const errors = [];
+		
+		// Always required fields
+		if (!frm.doc.project) {
+			errors.push({
+				fieldname: "project",
+				label: "Project",
+				message: "Project is required"
+			});
+		}
+		
+		if (!frm.doc.measurement_method) {
+			errors.push({
+				fieldname: "measurement_method",
+				label: "Measurement Method",
+				message: "Measurement Method is required"
+			});
+		}
+		
+		// Conditionally required fields based on measurement_method
+		if (frm.doc.measurement_method === "Contractor Assigned") {
+			if (!frm.doc.assigned_contractor) {
+				errors.push({
+					fieldname: "assigned_contractor",
+					label: "Assigned Contractor",
+					message: "Assigned Contractor is required when Measurement Method is 'Contractor Assigned'"
+				});
+			}
+			
+			if (!frm.doc.expected_measurement_date) {
+				errors.push({
+					fieldname: "expected_measurement_date",
+					label: "Expected Measurement Date",
+					message: "Expected Measurement Date is required when Measurement Method is 'Contractor Assigned'"
+				});
+			}
+			
+			// Visiting charge is required if site visit is required
+			if (frm.doc.site_visit_required && (!frm.doc.visiting_charge || frm.doc.visiting_charge === 0)) {
+				errors.push({
+					fieldname: "visiting_charge",
+					label: "Visiting Charge",
+					message: "Visiting Charge is required when Site Visit Required is checked"
+				});
+			}
+		}
+		
+		// Status-based requirements
+		if (frm.doc.status === "Rejected" && !frm.doc.rejection_reason) {
+			errors.push({
+				fieldname: "rejection_reason",
+				label: "Rejection Reason",
+				message: "Rejection Reason is required when Status is 'Rejected'"
+			});
+		}
+		
+		return errors;
+	};
+
+	/**
+	 * Highlight fields with errors (red border and error message)
+	 */
+	ns.highlight_field_errors = function highlight_field_errors(frm, errors) {
+		errors.forEach((error) => {
+			const field = frm.get_field(error.fieldname);
+			if (field) {
+				// Try multiple ways to get the field wrapper
+				let $wrapper = null;
+				if (field.$wrapper) {
+					$wrapper = $(field.$wrapper);
+				} else if (field.wrapper) {
+					$wrapper = $(field.wrapper);
+				} else if (field.df) {
+					// Try to find by fieldname attribute
+					$wrapper = $(`[data-fieldname="${error.fieldname}"]`);
+				}
+				
+				if ($wrapper && $wrapper.length) {
+					$wrapper.addClass("error");
+					
+					// Add error message below the field
+					let $errorMsg = $wrapper.find(".field-error-message");
+					if ($errorMsg.length === 0) {
+						$errorMsg = $(`<div class="field-error-message text-danger" style="margin-top: 5px; font-size: 12px;">
+							<i class="fa fa-exclamation-circle"></i> ${frappe.utils.escape_html(error.message)}
+						</div>`);
+						$wrapper.append($errorMsg);
+					} else {
+						$errorMsg.html(`<i class="fa fa-exclamation-circle"></i> ${frappe.utils.escape_html(error.message)}`);
+					}
+					
+					// Add red border to input
+					const $input = $wrapper.find("input, select, textarea, .control-input");
+					if ($input && $input.length) {
+						$input.css("border-color", "#e74c3c");
+						$input.css("box-shadow", "0 0 0 0.2rem rgba(231, 76, 60, 0.25)");
+					}
+					
+					// Also try to highlight the control input wrapper
+					const $controlInput = $wrapper.find(".control-input-wrapper");
+					if ($controlInput && $controlInput.length) {
+						$controlInput.css("border-color", "#e74c3c");
+					}
+				}
+			}
+		});
+	};
+
+	/**
+	 * Clear all field error highlights
+	 */
+	ns.clear_field_errors = function clear_field_errors(frm) {
+		// Remove error classes and messages from all fields
+		frm.fields.forEach((field) => {
+			if (field && field.wrapper) {
+				const $wrapper = $(field.wrapper || field.$wrapper);
+				if ($wrapper && $wrapper.length) {
+					$wrapper.removeClass("error");
+					$wrapper.find(".field-error-message").remove();
+					
+					// Reset input styling
+					const $input = $wrapper.find("input, select, textarea");
+					if ($input && $input.length) {
+						$input.css("border-color", "");
+						$input.css("box-shadow", "");
+					}
+				}
+			}
+		});
+	};
+
+	/**
+	 * Clear error highlight for a specific field
+	 */
+	ns.clear_field_error = function clear_field_error(frm, fieldname) {
+		const field = frm.get_field(fieldname);
+		if (field) {
+			// Try multiple ways to get the field wrapper
+			let $wrapper = null;
+			if (field.$wrapper) {
+				$wrapper = $(field.$wrapper);
+			} else if (field.wrapper) {
+				$wrapper = $(field.wrapper);
+			} else {
+				// Try to find by fieldname attribute
+				$wrapper = $(`[data-fieldname="${fieldname}"]`);
+			}
+			
+			if ($wrapper && $wrapper.length) {
+				$wrapper.removeClass("error");
+				$wrapper.find(".field-error-message").remove();
+				
+				// Reset input styling
+				const $input = $wrapper.find("input, select, textarea, .control-input");
+				if ($input && $input.length) {
+					$input.css("border-color", "");
+					$input.css("box-shadow", "");
+				}
+				
+				// Reset control input wrapper
+				const $controlInput = $wrapper.find(".control-input-wrapper");
+				if ($controlInput && $controlInput.length) {
+					$controlInput.css("border-color", "");
+				}
+			}
+		}
+	};
+
+	/**
+	 * Scroll to the first error field
+	 */
+	ns.scroll_to_first_error = function scroll_to_first_error(frm, errors) {
+		if (errors.length === 0) return;
+		
+		const firstError = errors[0];
+		const field = frm.get_field(firstError.fieldname);
+		
+		if (field) {
+			// Try multiple ways to get the field wrapper
+			let $wrapper = null;
+			if (field.$wrapper) {
+				$wrapper = $(field.$wrapper);
+			} else if (field.wrapper) {
+				$wrapper = $(field.wrapper);
+			} else {
+				// Try to find by fieldname attribute
+				$wrapper = $(`[data-fieldname="${firstError.fieldname}"]`);
+			}
+			
+			if ($wrapper && $wrapper.length) {
+				// Scroll to field with smooth animation
+				$wrapper[0].scrollIntoView({ 
+					behavior: "smooth", 
+					block: "center" 
+				});
+				
+				// Focus on the input field after a short delay
+				setTimeout(() => {
+					const $input = $wrapper.find("input, select, textarea, .control-input").first();
+					if ($input && $input.length) {
+						$input.focus();
+					}
+				}, 300);
+			}
+		}
+	};
+
+	/**
+	 * Show validation errors in a user-friendly way
+	 */
+	ns.show_validation_errors = function show_validation_errors(frm, errors) {
+		if (errors.length === 0) return;
+		
+		// Build error message with field names
+		let message = "<div style='text-align: left;'>";
+		message += "<p style='margin-bottom: 10px;'><strong>Please fill in the following required fields:</strong></p>";
+		message += "<ul style='margin-left: 20px; margin-bottom: 0;'>";
+		
+		errors.forEach((error) => {
+			message += `<li style='margin-bottom: 5px;'><strong>${error.label}</strong>: ${error.message}</li>`;
+		});
+		
+		// Show message with indicator
+		frappe.msgprint({
+			title: __("Missing Required Fields"),
+			message: message,
+			indicator: "red",
+			alert: true
+		});
 	};
 })(fabric_sense.measurement_sheet);

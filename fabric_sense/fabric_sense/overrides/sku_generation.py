@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
-import frappe
-from frappe import _
-from erpnext.stock.doctype.item.item import Item
+import frappe # type: ignore
+from frappe import _ # type: ignore
+from erpnext.stock.doctype.item.item import Item # type: ignore
 import re
 
 class CustomItem(Item):
@@ -67,13 +67,13 @@ class CustomItem(Item):
         """Additional validations and SKU regeneration on edit"""
         super().validate()
         
-        # Regenerate SKU if category or vendor code has changed
+        # Handle SKU logic for both new and existing items
         if not self.is_new():
+            # Check if category or vendor code has changed
             if self.has_value_changed('custom_category_code') or self.has_value_changed('custom_vendor_code'):
                 if self.custom_category_code and self.custom_vendor_code:
-                    # Validate and clean the codes
+                    # Both fields present - generate/regenerate SKU
                     category = self._validate_and_clean_code(self.custom_category_code, "Category Code")
-                    # Extract vendor code part from select field
                     vendor_code_only = self._extract_vendor_code(self.custom_vendor_code)
                     vendor = self._validate_and_clean_code(vendor_code_only, "Vendor Code")
                     
@@ -82,3 +82,6 @@ class CustomItem(Item):
                     sequence = running_number.split('-')[-1]
                     
                     self.custom_sku = f"{category}-{vendor}-{sequence}"
+                elif not self.custom_category_code and not self.custom_vendor_code:
+                    # Both fields are empty - clear the SKU (for service items)
+                    self.custom_sku = None

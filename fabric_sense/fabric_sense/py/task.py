@@ -1,6 +1,7 @@
 import frappe
 from frappe import _
-from frappe.utils import now_datetime, get_datetime
+from frappe.utils import now_datetime, get_datetime, formatdate
+from erpnext.projects.doctype.task.task import Task
 
 
 def prefill_from_tailoring_sheet_and_service(doc, method=None):
@@ -176,6 +177,88 @@ def handle_status_change_to_completed(doc, method=None):
         doc.custom_service_charge = service_charge
     if hasattr(doc, 'custom_total_contractor_amount'):
         doc.custom_total_contractor_amount = total_contractor_amount
+
+
+def create_contractor_payment_history(doc, method=None):
+    """
+    Create Contractor Payment History when task status changes to Completed.
+    
+    This function is called via hooks when a Task is saved.
+    It checks if the status changed to "Completed" and creates a payment history record.
+    
+    Args:
+        doc: Task document
+        method: Event method name
+    """
+    # Only process if status is Completed
+    if doc.status != "Completed":
+        return
+    
+    # Check if status actually changed to Completed
+    if not doc.is_new():
+        old_doc = doc.get_doc_before_save()
+        if old_doc and old_doc.status == "Completed":
+            # Status was already Completed, no need to create payment history again
+            return
+    
+    # Check if payment record already exists for this task
+    existing = frappe.db.exists("Contractor Payment History", {
+        "task": doc.name
+    })
+    
+    if existing:
+        return
+    
+    # Check if contractor is assigned
+    if not doc.custom_assigned_contractor:
+        frappe.msgprint(
+            _("No contractor assigned to this task. Payment history not created."),
+            indicator="orange",
+            alert=True
+        )
+        return
+    
+    # Check if payment amount is set
+    payment_amount = doc.custom_total_contractor_amount or 0
+    
+    if not payment_amount or payment_amount <= 0:
+        frappe.msgprint(
+            _("Payment amount not set for this task. Payment history not created."),
+            indicator="orange",
+            alert=True
+        )
+        return
+    
+    # Create payment history record
+    try:
+        payment_history = frappe.get_doc({
+            "doctype": "Contractor Payment History",
+            "task": doc.name,
+            "project": doc.project,
+            "contractor": doc.custom_assigned_contractor,
+            "amount": payment_amount,
+            "status": "Unpaid",
+            "amount_paid": 0
+        })
+        
+        payment_history.insert(ignore_permissions=True)
+        frappe.db.commit()
+        
+        frappe.msgprint(
+            _("Contractor Payment History created: {0}").format(
+                frappe.get_desk_link("Contractor Payment History", payment_history.name)
+            ),
+            indicator="green",
+            alert=True
+        )
+        
+    except Exception as e:
+        frappe.log_error(frappe.get_traceback(), "Create Contractor Payment History Failed")
+        frappe.msgprint(
+            _("Failed to create payment history: {0}").format(str(e)),
+            indicator="red",
+            alert=True
+        )
 
 
 def get_service_rate(service, contractor, show_message=True):
@@ -693,3 +776,252 @@ def get_latest_tailoring_sheet_for_project(project):
             title="Task: Get Latest Tailoring Sheet Error"
         )
         return None
+
+
+def notify_assigned_contractor(doc, method=None):
+    """
+    Send an email to the assigned contractor when custom_assigned_contractor is set or changed.
+    
+    Args:
+        doc: Task document
+        method: Event method name
+    """
+    try:
+        # Only process if contractor is assigned and field changed (for updates)
+        if not doc.custom_assigned_contractor:
+            return
+        
+        # For updates, only send if field changed
+        if not doc.is_new():
+            old_doc = doc.get_doc_before_save()
+            if old_doc and old_doc.get("custom_assigned_contractor") == doc.custom_assigned_contractor:
+                # Field didn't change, skip notification
+                return
+        
+        # Get contractor email
+        recipient = _get_contractor_email(doc.custom_assigned_contractor)
+        if not recipient:
+            return
+        
+        # Get contractor name for personalization
+        contractor_name = (
+            frappe.db.get_value("Employee", doc.custom_assigned_contractor, "employee_name")
+            or "there"
+        )
+        
+        # Build subject
+        subject = f"New Task Assignment - {doc.subject or doc.name or ''}"
+        
+        # Prepare data rows
+        rows = []
+        
+        # Task Name (subject)
+        if doc.subject:
+            rows.append(
+                f"""
+                <tr>
+                    <td style="padding: 12px 16px; border-bottom: 1px solid #e5e7eb; background-color: #f9fafb;">
+                        <strong style="color: #374151;">Task Name</strong>
+                    </td>
+                    <td style="padding: 12px 16px; border-bottom: 1px solid #e5e7eb;">
+                        <span style="font-family: 'Courier New', monospace; color: #1f2937; font-weight: 600;">{frappe.utils.escape_html(doc.subject)}</span>
+                    </td>
+                </tr>
+            """
+            )
+        
+        # Task ID
+        if doc.name:
+            rows.append(
+                f"""
+                <tr>
+                    <td style="padding: 12px 16px; border-bottom: 1px solid #e5e7eb; background-color: #f9fafb;">
+                        <strong style="color: #374151;">Task ID</strong>
+                    </td>
+                    <td style="padding: 12px 16px; border-bottom: 1px solid #e5e7eb;">
+                        <span style="color: #1f2937;">{frappe.utils.escape_html(doc.name)}</span>
+                    </td>
+                </tr>
+            """
+            )
+        
+        # Status
+        if doc.status:
+            rows.append(
+                f"""
+                <tr>
+                    <td style="padding: 12px 16px; border-bottom: 1px solid #e5e7eb; background-color: #f9fafb;">
+                        <strong style="color: #374151;">Status</strong>
+                    </td>
+                    <td style="padding: 12px 16px; border-bottom: 1px solid #e5e7eb;">
+                        <span style="color: #1f2937;">{frappe.utils.escape_html(doc.status)}</span>
+                    </td>
+                </tr>
+            """
+            )
+        
+        # Project
+        if doc.project:
+            project_name = (
+                frappe.db.get_value("Project", doc.project, "project_name")
+                or doc.project
+            )
+            rows.append(
+                f"""
+                <tr>
+                    <td style="padding: 12px 16px; border-bottom: 1px solid #e5e7eb; background-color: #f9fafb;">
+                        <strong style="color: #374151;">Project</strong>
+                    </td>
+                    <td style="padding: 12px 16px; border-bottom: 1px solid #e5e7eb;">
+                        <span style="color: #1f2937;">{frappe.utils.escape_html(project_name)}</span>
+                    </td>
+                </tr>
+            """
+            )
+        
+        # Priority
+        if doc.priority:
+            rows.append(
+                f"""
+                <tr>
+                    <td style="padding: 12px 16px; border-bottom: 1px solid #e5e7eb; background-color: #f9fafb;">
+                        <strong style="color: #374151;">Priority</strong>
+                    </td>
+                    <td style="padding: 12px 16px; border-bottom: 1px solid #e5e7eb;">
+                        <span style="color: #1f2937;">{frappe.utils.escape_html(doc.priority)}</span>
+                    </td>
+                </tr>
+            """
+            )
+        
+        # Expected Start Date
+        if getattr(doc, "expected_start_date", None):
+            rows.append(
+                f"""
+                <tr>
+                    <td style="padding: 12px 16px; border-bottom: 1px solid #e5e7eb; background-color: #f9fafb;">
+                        <strong style="color: #374151;">📅 Expected Start Date</strong>
+                    </td>
+                    <td style="padding: 12px 16px; border-bottom: 1px solid #e5e7eb;">
+                        <span style="color: #1f2937; font-weight: 600;">{formatdate(doc.expected_start_date)}</span>
+                    </td>
+                </tr>
+            """
+            )
+        
+        # Expected End Date
+        if getattr(doc, "expected_end_date", None):
+            rows.append(
+                f"""
+                <tr>
+                    <td style="padding: 12px 16px; border-bottom: 1px solid #e5e7eb; background-color: #f9fafb;">
+                        <strong style="color: #374151;">📅 Expected End Date</strong>
+                    </td>
+                    <td style="padding: 12px 16px; border-bottom: 1px solid #e5e7eb;">
+                        <span style="color: #1f2937; font-weight: 600;">{formatdate(doc.expected_end_date)}</span>
+                    </td>
+                </tr>
+            """
+            )
+        
+        rows_html = "".join(rows)
+        
+        # Build the complete HTML message with modern styling (same as Measurement Sheet)
+        message = f"""
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <meta charset="UTF-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            </head>
+            <body style="margin: 0; padding: 0; background-color: #f3f4f6; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Inter', 'Roboto', 'Helvetica Neue', Arial, sans-serif;">
+                <div style="max-width: 600px; margin: 0 auto; padding: 20px;">
+                    <!-- Header Card -->
+                    <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 12px 12px 0 0; padding: 32px 24px; text-align: center;">
+                        <div style="background-color: white; width: 60px; height: 60px; border-radius: 50%; margin: 0 auto 12px; padding-top: 8px;">
+                            <span style="font-size: 28px;">📋</span>
+                        </div>
+                        <h1 style="margin: 0; color: white; font-size: 24px; font-weight: 700; letter-spacing: -0.5px;">New Task Assignment</h1>
+                        <p style="margin: 8px 0 0; color: rgba(255,255,255,0.9); font-size: 14px;">You have been assigned to a new task</p>
+                    </div>
+                    
+                    <!-- Main Content Card -->
+                    <div style="background-color: white; border-radius: 0 0 12px 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); overflow: hidden;">
+                        <!-- Greeting -->
+                        <div style="padding: 24px 24px 16px;">
+                            <p style="margin: 0; font-size: 16px; color: #1f2937; line-height: 1.6;">
+                                Hello <strong style="color: #667eea;">{frappe.utils.escape_html(contractor_name)}</strong>,
+                            </p>
+                            <p style="margin: 12px 0 0; font-size: 15px; color: #4b5563; line-height: 1.6;">
+                                You have been assigned to a new task. Please review the details below and proceed accordingly.
+                            </p>
+                        </div>
+                        
+                        <!-- Details Table -->
+                        <div style="padding: 0 24px 24px;">
+                            <table style="width: 100%; border-collapse: collapse; border: 1px solid #e5e7eb; border-radius: 8px; overflow: hidden;">
+                                <tbody>
+                                    {rows_html}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </body>
+            </html>
+        """
+        
+        frappe.sendmail(
+            recipients=[recipient],
+            subject=subject,
+            message=message,
+            reference_doctype=doc.doctype,
+            reference_name=doc.name,
+        )
+        
+    except Exception:
+        # Do not block save due to notification errors
+        frappe.log_error(
+            frappe.get_traceback(),
+            "Task: Notification Error in notify_assigned_contractor",
+        )
+
+
+def _get_contractor_email(employee_id: str) -> str | None:
+    """
+    Resolve an email for the given Employee.
+    Priority: linked User.email -> Employee.company_email -> Employee.personal_email -> Employee.prefered_email
+    
+    Args:
+        employee_id (str): Employee name/ID
+        
+    Returns:
+        str | None: Email address or None if not found
+    """
+    if not employee_id:
+        return None
+    
+    # Try linked User first
+    user_id = frappe.db.get_value("Employee", employee_id, "user_id")
+    if user_id:
+        user_email = frappe.db.get_value("User", user_id, "email")
+        if user_email:
+            return user_email
+    
+    # Fallback to common email fields on Employee
+    email_fields = [
+        "company_email",
+        "personal_email",
+        "prefered_email",
+        "prefered_contact_email",
+    ]
+    employee = frappe.db.get_value(
+        "Employee", employee_id, email_fields, as_dict=True
+    )
+    if employee:
+        for f in email_fields:
+            eml = employee.get(f)
+            if eml:
+                return eml
+    
+    return None

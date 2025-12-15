@@ -314,6 +314,7 @@ def send_approval_email(doc, customer_email):
                             <td style="padding: 12px; border: 1px solid #ddd; text-align: right;">{fmt_money(doc.total, currency=doc.currency)}</td>
                         </tr>
                         {f'<tr style="background-color: #f8f9fa;"><td colspan="3" style="padding: 12px; border: 1px solid #ddd; text-align: right;">Tax:</td><td style="padding: 12px; border: 1px solid #ddd; text-align: right;">{fmt_money(doc.total_taxes_and_charges, currency=doc.currency)}</td></tr>' if doc.total_taxes_and_charges else ''}
+                        {f'<tr style="background-color: #d4edda;"><td colspan="3" style="padding: 12px; border: 1px solid #ddd; text-align: right; color: #155724;"><strong>Discount ({doc.additional_discount_percentage}%):</strong></td><td style="padding: 12px; border: 1px solid #ddd; text-align: right; color: #155724;"><strong>- {fmt_money(doc.discount_amount, currency=doc.currency)}</strong></td></tr>' if doc.get('discount_amount') and doc.discount_amount > 0 else ''}
                         <tr style="background-color: #667eea; color: white; font-size: 16px;">
                             <td colspan="3" style="padding: 14px; border: 1px solid #ddd; text-align: right;"><strong>Grand Total:</strong></td>
                             <td style="padding: 14px; border: 1px solid #ddd; text-align: right;"><strong>{fmt_money(doc.grand_total, currency=doc.currency)}</strong></td>
@@ -771,6 +772,18 @@ def send_delivery_ready_email(doc, customer_email):
                 <tbody>
                     {item_table_html}
                 </tbody>
+                <tfoot>
+                    <tr style="background-color: #f8f9fa; font-weight: bold;">
+                        <td colspan="3" style="padding: 10px; border: 1px solid #ddd; text-align: right;">Total:</td>
+                        <td style="padding: 10px; border: 1px solid #ddd; text-align: right;">{fmt_money(doc.total, currency=doc.currency)}</td>
+                    </tr>
+                    {f'<tr style="background-color: #f8f9fa;"><td colspan="3" style="padding: 10px; border: 1px solid #ddd; text-align: right;">Tax:</td><td style="padding: 10px; border: 1px solid #ddd; text-align: right;">{fmt_money(doc.total_taxes_and_charges, currency=doc.currency)}</td></tr>' if doc.total_taxes_and_charges else ''}
+                    {f'<tr style="background-color: #d4edda;"><td colspan="3" style="padding: 10px; border: 1px solid #ddd; text-align: right; color: #155724;"><strong>Discount ({doc.additional_discount_percentage}%):</strong></td><td style="padding: 10px; border: 1px solid #ddd; text-align: right; color: #155724;"><strong>- {fmt_money(doc.discount_amount, currency=doc.currency)}</strong></td></tr>' if doc.get('discount_amount') and doc.discount_amount > 0 else ''}
+                    <tr style="background-color: #28a745; color: white; font-size: 16px;">
+                        <td colspan="3" style="padding: 12px; border: 1px solid #ddd; text-align: right;"><strong>Grand Total:</strong></td>
+                        <td style="padding: 12px; border: 1px solid #ddd; text-align: right;"><strong>{fmt_money(doc.grand_total, currency=doc.currency)}</strong></td>
+                    </tr>
+                </tfoot>
             </table>
             
             <div style="margin-top: 40px; padding-top: 20px; border-top: 2px solid #ddd;">

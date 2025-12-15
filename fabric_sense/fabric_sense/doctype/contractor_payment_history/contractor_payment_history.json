@@ -80,7 +80,8 @@
    "fieldname": "balance",
    "fieldtype": "Currency",
    "label": "Balance",
-   "precision": "2"
+   "precision": "2",
+   "read_only": 1
   }
  ],
  "grid_page_length": 50,

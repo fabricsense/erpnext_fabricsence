@@ -89,14 +89,22 @@ doc_events = {
     },
     "Payment Entry": {
         "validate": "fabric_sense.fabric_sense.py.payment_entry.set_manager_approval_status_for_deductions",
-        "on_submit": "fabric_sense.fabric_sense.py.payment_entry_notifications.send_customer_payment_notification",
+        "on_submit": [
+            "fabric_sense.fabric_sense.py.payment_entry.update_contractor_payment_history",
+            "fabric_sense.fabric_sense.py.payment_entry_notifications.send_customer_payment_notification",
+        ],
+        "on_cancel": "fabric_sense.fabric_sense.py.payment_entry.revert_contractor_payment_history",
     },
     "Task": {
         "before_save": [
             "fabric_sense.fabric_sense.py.task.prefill_from_tailoring_sheet_and_service",
             "fabric_sense.fabric_sense.py.task.handle_status_change_to_working",
             "fabric_sense.fabric_sense.py.task.handle_status_change_to_completed",
-        ]
+            "fabric_sense.fabric_sense.py.task.notify_assigned_contractor",
+        ],
+        "on_update": [
+            "fabric_sense.fabric_sense.py.task.create_contractor_payment_history"
+        ],
     },
 }
 # Svg Icons
@@ -235,7 +243,12 @@ override_doctype_class = {
 override_doctype_dashboards = {
     "Sales Order": "fabric_sense.fabric_sense.py.sales_order_dashboard.get_data",
     "Project": "fabric_sense.fabric_sense.py.project_dashboard.get_data",
+    "Customer": "fabric_sense.fabric_sense.py.customer_dashboard.get_data",
 }
+
+fixtures = [
+    {"dt": "Workspace", "filters": [["name", "in", ["Fabric Sense"]]]},
+]
 
 # exempt linked doctypes from being automatically cancelled
 #

@@ -6,11 +6,17 @@ def get_data():
         "fieldname": "measurement_sheet",
         "non_standard_fieldnames": {
             "Tailoring Sheet": "measurement_sheet",
+            "Sales Order": "measurement_sheet",
         },
-        # "internal_links": {
-        #     "Tailoring Sheet": ["measurement_sheet", "measurement_sheet"],
-        # },
+        "internal_links": {
+            # "Tailoring Sheet": ["measurement_sheet", "measurement_sheet"],
+            "Sales Order": ["measurement_sheet", "measurement_sheet"],
+        },
         "transactions": [
+            {
+                "label": _("Sales"),
+                "items": ["Sales Order"],
+            },
             {
                 "label": _("Tailoring Sheet"),
                 "items": ["Tailoring Sheet"],

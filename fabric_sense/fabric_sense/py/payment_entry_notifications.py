@@ -152,11 +152,16 @@ def send_payment_email(doc, customer_email):
                         status_color = "#28a745" if outstanding_after == 0 else "#ffc107"
                         status_text = "PAID" if outstanding_after == 0 else "PARTIALLY PAID"
                         
+                        # Calculate original amount before discount
+                        original_amount = ref.total_amount
+                        if invoice.get('discount_amount') and invoice.discount_amount > 0:
+                            original_amount = invoice.total + invoice.total_taxes_and_charges
+                        
                         # Main invoice row
                         invoice_table_html += f"""
                         <tr>
                             <td style="padding: 8px; border: 1px solid #ddd;">{ref.reference_name}</td>
-                            <td style="padding: 8px; border: 1px solid #ddd; text-align: right;">{fmt_money(ref.total_amount, currency=doc.paid_to_account_currency)}</td>
+                            <td style="padding: 8px; border: 1px solid #ddd; text-align: right;">{fmt_money(original_amount, currency=doc.paid_to_account_currency)}</td>
                             <td style="padding: 8px; border: 1px solid #ddd; text-align: right;">{fmt_money(ref.allocated_amount, currency=doc.paid_to_account_currency)}</td>
                             <td style="padding: 8px; border: 1px solid #ddd; text-align: right;">{fmt_money(outstanding_after, currency=doc.paid_to_account_currency)}</td>
                             <td style="padding: 8px; border: 1px solid #ddd; text-align: center;">

@@ -1,5 +1,184 @@
 frappe.ui.form.on("Payment Entry", {
+	setup: function(frm) {
+		// Check sessionStorage flag
+		let forceEmployee = sessionStorage.getItem("force_party_type_employee");
+		
+		// Setup runs first - force party_type if coming from Contractor Payment History
+		if (forceEmployee === "1" || frm.doc.custom_contractor_payment_history) {
+			frm.doc.party_type = "Employee";
+			
+			// Try to set party from sessionStorage
+			let contractorParty = sessionStorage.getItem("contractor_party");
+			if (contractorParty && !frm.doc.party) {
+				frm.doc.party = contractorParty;
+			}
+		}
+	},
+	
+	onload: function (frm) {
+		// Check sessionStorage flags
+		let forceEmployee = sessionStorage.getItem("force_party_type_employee");
+		let contractorRef = sessionStorage.getItem("contractor_payment_ref");
+		let contractorParty = sessionStorage.getItem("contractor_party");
+		let contractorBalance = sessionStorage.getItem("contractor_balance");
+		let contractorPaymentRecords = sessionStorage.getItem("contractor_payment_records");
+		
+		// Force party_type to Employee if created from Contractor Payment History
+		if (frm.is_new() && (forceEmployee === "1" || frm.doc.custom_contractor_payment_history)) {
+			// Override party_type immediately and repeatedly
+			frm.doc.party_type = "Employee";
+			frm.set_value("party_type", "Employee");
+			
+			// Set party from sessionStorage immediately
+			if (contractorParty) {
+				frm.doc.party = contractorParty;
+				
+				// Also set it with a delay to ensure it sticks
+				setTimeout(function() {
+					frm.set_value("party", contractorParty);
+				}, 100);
+				
+				setTimeout(function() {
+					if (!frm.doc.party || frm.doc.party !== contractorParty) {
+						frm.set_value("party", contractorParty);
+					}
+				}, 300);
+			}
+			
+			// Store contractor payment records in JSON field
+			if (contractorPaymentRecords) {
+				try {
+					let records = JSON.parse(contractorPaymentRecords);
+					if (records && records.length > 0) {
+						// Store the JSON directly in the Long Text field
+						frm.doc.custom_contractor_payment_records_json = contractorPaymentRecords;
+						
+						// Set the first record as the main reference (for backward compatibility)
+						frm.set_value("custom_contractor_payment_history", records[0].name);
+						
+						// Also set it with a delay to ensure it persists
+						setTimeout(function() {
+							frm.set_value("custom_contractor_payment_records_json", contractorPaymentRecords);
+						}, 200);
+					}
+				} catch (e) {
+					console.error("Error parsing contractor payment records:", e);
+				}
+			}
+			
+			// Set the first account in Account Paid From field
+			setTimeout(function() {
+				if (!frm.doc.paid_from) {
+					frappe.call({
+						method: "frappe.client.get_list",
+						args: {
+							doctype: "Account",
+							filters: {
+								account_type: ["in", ["Bank", "Cash"]],
+								is_group: 0,
+								company: frm.doc.company || frappe.defaults.get_user_default("Company")
+							},
+							fields: ["name"],
+							limit: 1,
+							order_by: "name asc"
+						},
+						callback: function(r) {
+							if (r.message && r.message.length > 0) {
+								frm.set_value("paid_from", r.message[0].name);
+							}
+						}
+					});
+				}
+			}, 400);
+			
+			// Get contractor payment history details (for single record case)
+			let cph_ref = frm.doc.custom_contractor_payment_history || contractorRef;
+			
+			if (cph_ref && !contractorPaymentRecords) {
+				frappe.call({
+					method: "frappe.client.get",
+					args: {
+						doctype: "Contractor Payment History",
+						name: cph_ref
+					},
+					callback: function(r) {
+						if (r.message) {
+							// Force party_type again before setting party
+							frm.doc.party_type = "Employee";
+							frm.set_value("party_type", "Employee");
+							
+							// Set party (contractor) if not already set
+							if (!frm.doc.party && r.message.contractor) {
+								setTimeout(function() {
+									frm.set_value("party", r.message.contractor);
+								}, 100);
+							}
+						}
+					}
+				});
+			}
+			
+			// Clear sessionStorage after use
+			setTimeout(function() {
+				sessionStorage.removeItem("force_party_type_employee");
+				sessionStorage.removeItem("contractor_payment_ref");
+				sessionStorage.removeItem("contractor_party");
+				sessionStorage.removeItem("contractor_balance");
+				sessionStorage.removeItem("contractor_task");
+				sessionStorage.removeItem("contractor_project");
+				sessionStorage.removeItem("contractor_payment_records");
+			}, 1000);
+		}
+	},
+	
 	refresh: function (frm) {
+		// Force party_type to Employee if custom_contractor_payment_history is set
+		if (frm.is_new() && frm.doc.custom_contractor_payment_history) {
+			// Aggressively set party_type to Employee
+			if (frm.doc.party_type !== "Employee") {
+				frm.doc.party_type = "Employee";
+				frm.refresh_field("party_type");
+			}
+			
+			// Use multiple approaches to ensure it sticks
+			setTimeout(function() {
+				if (frm.doc.party_type !== "Employee") {
+					frm.doc.party_type = "Employee";
+					frm.refresh_field("party_type");
+					
+					// Try setting through the field object directly
+					let field = frm.fields_dict.party_type;
+					if (field && field.set_value) {
+						field.set_value("Employee");
+					}
+				}
+				
+				// Ensure party is set if it's empty
+				if (!frm.doc.party && frm.doc.custom_contractor_payment_history) {
+					frappe.db.get_value("Contractor Payment History", frm.doc.custom_contractor_payment_history, "contractor")
+						.then(r => {
+							if (r.message && r.message.contractor) {
+								frm.set_value("party", r.message.contractor);
+							}
+						});
+				}
+			}, 50);
+			
+			setTimeout(function() {
+				if (frm.doc.party_type !== "Employee") {
+					frm.doc.party_type = "Employee";
+					frm.refresh_field("party_type");
+				}
+			}, 200);
+			
+			setTimeout(function() {
+				if (frm.doc.party_type !== "Employee") {
+					frm.doc.party_type = "Employee";
+					frm.refresh_field("party_type");
+				}
+			}, 500);
+		}
+		
 		// Remove existing custom buttons to prevent duplicates
 		const pageActions = frm.page.page_actions;
 		pageActions.find(".btn-primary").each(function () {
@@ -258,6 +437,38 @@ frappe.ui.form.on("Payment Entry", {
 				.prependTo(frm.page.page_actions);
 		}
 	},
+	party_type: function(frm) {
+		// Lock party_type to Employee if linked to Contractor Payment History
+		if (frm.doc.custom_contractor_payment_history && frm.doc.party_type !== "Employee") {
+			frm.set_value("party_type", "Employee");
+			frappe.show_alert({
+				message: __("Party Type must be Employee for Contractor Payments"),
+				indicator: "orange"
+			});
+		}
+		
+		// When party_type is set to Employee from Contractor Payment History, set the party
+		if (frm.is_new() && frm.doc.party_type === "Employee" && frm.doc.custom_contractor_payment_history && !frm.doc.party) {
+			// Try to get party from sessionStorage first
+			let contractorParty = sessionStorage.getItem("contractor_party");
+			if (contractorParty) {
+				setTimeout(function() {
+					frm.set_value("party", contractorParty);
+				}, 50);
+			} else {
+				// Fetch from database
+				frappe.db.get_value("Contractor Payment History", frm.doc.custom_contractor_payment_history, "contractor")
+					.then(r => {
+						if (r.message && r.message.contractor) {
+							setTimeout(function() {
+								frm.set_value("party", r.message.contractor);
+							}, 50);
+						}
+					});
+			}
+		}
+	},
+	
 	before_submit: function (frm) {
 		// Check if custom_manager_approval_status is Pending
 		if (
