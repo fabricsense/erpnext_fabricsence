@@ -9,12 +9,13 @@
   "basic_information_section",
   "naming_series",
   "customer",
-  "tailoring__fitting_required",
+  "order_type",
   "project",
   "column_break_bbjf",
   "status",
   "measurement_date",
   "measurement_method",
+  "sales_person",
   "contractor_assignment_section",
   "assigned_contractor",
   "expected_measurement_date",
@@ -58,6 +59,7 @@
    "read_only_depends_on": "eval:doc.status == 'Approved'"
   },
   {
+   "default": "Today",
    "fieldname": "measurement_date",
    "fieldtype": "Date",
    "in_list_view": 1,
@@ -79,7 +81,8 @@
    "label": "Measurement Method",
    "options": "\nCustomer Provided\nContractor Assigned",
    "read_only_depends_on": "eval:doc.status == 'Approved'",
-   "reqd": 1
+   "reqd": 1,
+   "set_only_once": 1
   },
   {
    "depends_on": "eval:doc.measurement_method=='Contractor Assigned'",
@@ -160,16 +163,22 @@
    "fieldtype": "Column Break"
   },
   {
-   "default": "0",
-   "fieldname": "tailoring__fitting_required",
-   "fieldtype": "Check",
-   "label": "Tailoring / Fitting Required"
+   "fieldname": "sales_person",
+   "fieldtype": "Data",
+   "label": "Sales Person",
+   "read_only": 1
+  },
+  {
+   "fieldname": "order_type",
+   "fieldtype": "Select",
+   "label": "Order Type",
+   "options": "Delivery\nFitting"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2025-12-15 11:31:36.627544",
+ "modified": "2025-12-15 18:27:26.940263",
  "modified_by": "Administrator",
  "module": "Fabric Sense",
  "name": "Measurement Sheet",

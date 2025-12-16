@@ -360,7 +360,8 @@
    "fieldname": "fitting_type",
    "fieldtype": "Link",
    "label": "Fitting Type",
-   "options": "Item"
+   "options": "Item",
+   "read_only": 1
   },
   {
    "fieldname": "fitting_charge",
@@ -370,7 +371,8 @@
   {
    "fieldname": "stitching_charge",
    "fieldtype": "Currency",
-   "label": "Stitching Charge"
+   "label": "Stitching Charge",
+   "read_only": 1
   },
   {
    "fieldname": "stiching_pattern",
@@ -383,7 +385,7 @@
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2025-12-12 12:47:58.628440",
+ "modified": "2025-12-15 17:50:34.090252",
  "modified_by": "Administrator",
  "module": "Fabric Sense",
  "name": "Tailoring Measurement Details",

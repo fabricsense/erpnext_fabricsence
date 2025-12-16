@@ -212,8 +212,11 @@ frappe.ui.form.on("Payment Entry", {
 							args: {
 								doctype: "Payment Entry",
 								name: frm.doc.name,
-								fieldname: "custom_manager_approval_status",
-								value: "Discount Approved",
+								fieldname: {
+									"custom_manager_approval_status": "Discount Approved",
+									"custom_discount_approved_by": frappe.session.user_fullname || frappe.session.user,
+									"custom_discound_approved_datetime": frappe.datetime.now_datetime()
+								}
 							},
 							callback: function (response) {
 								if (!response.exc) {
@@ -287,8 +290,11 @@ frappe.ui.form.on("Payment Entry", {
 							args: {
 								doctype: "Payment Entry",
 								name: frm.doc.name,
-								fieldname: "custom_manager_approval_status",
-								value: "Approved",
+								fieldname: {
+									"custom_manager_approval_status": "Approved",
+									"custom_approved_by": frappe.session.user_fullname || frappe.session.user,
+									"custom_approved_datetime": frappe.datetime.now_datetime()
+								}
 							},
 							callback: function (response) {
 								if (!response.exc) {

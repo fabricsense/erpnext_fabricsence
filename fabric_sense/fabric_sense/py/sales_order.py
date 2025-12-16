@@ -832,3 +832,134 @@ def send_delivery_ready_email(doc, customer_email):
             alert=True
         )
         return False
+
+
+@frappe.whitelist()
+def create_multi_material_request(sales_order):
+    """
+    Create two Material Requests from Sales Order:
+    - Purchase type: for items with 'Is On Order Item' checked
+    - Material Issue type: for all other items
+    
+    Args:
+        sales_order (str): Sales Order name
+        
+    Returns:
+        dict: Contains purchase_mr and issue_mr names
+    """
+    try:
+        # Get the Sales Order document
+        so_doc = frappe.get_doc("Sales Order", sales_order)
+        
+        if so_doc.docstatus != 1:
+            frappe.throw(_("Sales Order must be submitted to create Material Requests"))
+        
+        # Separate items based on 'Is On Order Item' field
+        purchase_items = []
+        issue_items = []
+        
+        for item in so_doc.items:
+            # Skip service items
+            if is_service_item(item.item_code):
+                continue
+            
+            # Check if item has 'Is On Order Item' checked
+            is_on_order = frappe.db.get_value("Item", item.item_code, "custom_is_onorder_item")
+            
+            if is_on_order:
+                purchase_items.append(item)
+            else:
+                issue_items.append(item)
+        
+        result = {
+            "purchase_mr": None,
+            "issue_mr": None
+        }
+        
+        # Create Purchase Material Request if there are on-order items
+        if purchase_items:
+            purchase_mr = create_material_request_from_items(
+                so_doc, 
+                purchase_items, 
+                "Purchase"
+            )
+            if purchase_mr:
+                result["purchase_mr"] = purchase_mr.name
+        
+        # Create Material Issue Request for other items
+        if issue_items:
+            issue_mr = create_material_request_from_items(
+                so_doc, 
+                issue_items, 
+                "Material Issue"
+            )
+            if issue_mr:
+                result["issue_mr"] = issue_mr.name
+        
+        return result
+        
+    except Exception as e:
+        frappe.log_error(
+            f"Error creating multi material request for {sales_order}: {str(e)}\n{frappe.get_traceback()}",
+            "Multi Material Request Error"
+        )
+        frappe.throw(_("Error creating Material Requests: {0}").format(str(e)))
+
+
+def create_material_request_from_items(so_doc, items, material_request_type):
+    """
+    Create a Material Request from given items.
+    
+    Args:
+        so_doc (Document): Sales Order document
+        items (list): List of Sales Order Item rows
+        material_request_type (str): "Purchase" or "Material Issue"
+        
+    Returns:
+        Document: Created Material Request document or None
+    """
+    if not items:
+        return None
+    
+    try:
+        # Create Material Request
+        mr_doc = frappe.new_doc("Material Request")
+        mr_doc.material_request_type = material_request_type
+        mr_doc.transaction_date = frappe.utils.today()
+        mr_doc.schedule_date = so_doc.delivery_date or frappe.utils.today()
+        mr_doc.company = so_doc.company
+        mr_doc.custom_sales_order = so_doc.name
+        
+        # Set approval status based on whether it's first or additional request
+        has_remaining_items = check_remaining_items(so_doc.name)
+        if has_remaining_items:
+            mr_doc.custom_manager_approval_status = "Approved"
+        else:
+            mr_doc.custom_manager_approval_status = "Pending"
+            mr_doc.custom_is_additional = 1
+        
+        # Add items to Material Request
+        for item in items:
+            mr_doc.append("items", {
+                "item_code": item.item_code,
+                "qty": item.qty,
+                "uom": item.stock_uom or item.uom,
+                "schedule_date": so_doc.delivery_date or frappe.utils.today(),
+                "warehouse": item.warehouse,
+                "sales_order": so_doc.name,
+                "sales_order_item": item.name
+            })
+        
+        mr_doc.insert()
+        mr_doc.submit()
+        
+        frappe.db.commit()
+        
+        return mr_doc
+        
+    except Exception as e:
+        frappe.log_error(
+            f"Error creating {material_request_type} Material Request: {str(e)}\n{frappe.get_traceback()}",
+            f"Create {material_request_type} MR Error"
+        )
+        return None

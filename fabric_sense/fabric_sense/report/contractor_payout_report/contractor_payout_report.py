@@ -68,8 +68,8 @@ def _get_data(filters):
 			cph.amount_paid as paid_amount,
 			cph.amount as amount_to_be_paid,
 			pe.mode_of_payment as payment_mode,
-			pe.modified_by as approved_by,
-			pe.modified as approval_date,
+			pe.custom_approved_by as approved_by,
+			pe.custom_approved_datetime as approval_date,
 			pe.owner as created_by,
 			pe.remarks
 		from `tabContractor Payment History` cph

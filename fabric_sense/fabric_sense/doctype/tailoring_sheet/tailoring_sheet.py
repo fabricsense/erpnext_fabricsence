@@ -3,9 +3,32 @@ from frappe.model.document import Document  # type: ignore
 
 
 class TailoringSheet(Document):
+    def validate(self):
+        """Validate document before saving"""
+        self.validate_project_uniqueness()
+
     def before_save(self):
         """Hook called before saving the document"""
         self.set_final_quantities()
+
+    def validate_project_uniqueness(self):
+        """Ensure only one Tailoring Sheet per Project"""
+        if self.project:
+            # Check for existing Tailoring Sheet with same project
+            existing = frappe.db.exists(
+                "Tailoring Sheet",
+                {
+                    "project": self.project,
+                    "name": ["!=", self.name],  # Exclude current document
+                    "docstatus": ["!=", 2]  # Exclude cancelled documents
+                }
+            )
+            if existing:
+                frappe.throw(
+                    f"Tailoring Sheet '{existing}' already exists for Project '{self.project}'. "
+                    "Only one Tailoring Sheet is allowed per Project.",
+                    title="Duplicate Project"
+                )
 
     def set_final_quantities(self):
         """Set final quantities from base quantities if empty or 0 in child table"""

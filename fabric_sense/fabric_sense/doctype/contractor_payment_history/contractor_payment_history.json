@@ -30,6 +30,7 @@
    "in_list_view": 1,
    "label": "Contractor",
    "options": "Employee",
+   "read_only": 1,
    "reqd": 1
   },
   {
@@ -38,6 +39,7 @@
    "in_list_view": 1,
    "label": "Task",
    "options": "Task",
+   "read_only": 1,
    "reqd": 1
   },
   {
@@ -45,6 +47,7 @@
    "fieldtype": "Link",
    "label": "Project",
    "options": "Project",
+   "read_only": 1,
    "reqd": 1
   },
   {
@@ -56,25 +59,29 @@
    "fieldtype": "Currency",
    "label": "Amount Due to the Contractor",
    "precision": "2",
+   "read_only": 1,
    "reqd": 1
   },
   {
    "fieldname": "status",
    "fieldtype": "Select",
    "label": "Status",
-   "options": "Unpaid\nPartially Paid\nPaid"
+   "options": "Unpaid\nPartially Paid\nPaid",
+   "read_only": 1
   },
   {
    "fieldname": "amount_paid",
    "fieldtype": "Currency",
    "label": "Amount Paid",
-   "precision": "2"
+   "precision": "2",
+   "read_only": 1
   },
   {
    "fieldname": "payment_entry",
    "fieldtype": "Link",
    "label": "Payment Entry",
-   "options": "Payment Entry"
+   "options": "Payment Entry",
+   "read_only": 1
   },
   {
    "fieldname": "balance",
@@ -87,7 +94,7 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2025-12-11 12:26:25.362743",
+ "modified": "2025-12-15 17:24:06.622224",
  "modified_by": "Administrator",
  "module": "Fabric Sense",
  "name": "Contractor Payment History",

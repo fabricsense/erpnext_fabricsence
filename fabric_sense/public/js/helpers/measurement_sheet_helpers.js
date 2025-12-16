@@ -1070,14 +1070,6 @@ frappe.provide("fabric_sense.measurement_sheet");
 		const errors = [];
 		
 		// Always required fields
-		if (!frm.doc.project) {
-			errors.push({
-				fieldname: "project",
-				label: "Project",
-				message: "Project is required"
-			});
-		}
-		
 		if (!frm.doc.measurement_method) {
 			errors.push({
 				fieldname: "measurement_method",
@@ -1085,6 +1077,27 @@ frappe.provide("fabric_sense.measurement_sheet");
 				message: "Measurement Method is required"
 			});
 		}
+		
+		// Conditionally required fields based on order_type
+		// Project is only required when order_type is explicitly "Fitting"
+		// If order_type is "Delivery", null, undefined, or empty, project is NOT required
+		const order_type = frm.doc.order_type;
+		
+		// Debug: Log order_type value (remove after testing)
+		// console.log("Order Type:", order_type, "Project:", frm.doc.project);
+		
+		// Only require project if order_type is explicitly "Fitting"
+		// For "Delivery" or any other value (including null/undefined), project is NOT required
+		if (order_type === "Fitting") {
+			if (!frm.doc.project) {
+				errors.push({
+					fieldname: "project",
+					label: "Project",
+					message: "Project is required when Order Type is 'Fitting'"
+				});
+			}
+		}
+		// For "Delivery" or any other value, project is NOT required - no validation needed
 		
 		// Conditionally required fields based on measurement_method
 		if (frm.doc.measurement_method === "Contractor Assigned") {

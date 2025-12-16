@@ -19,11 +19,20 @@ class MeasurementSheet(Document):
     Includes basic information, contractor assignment, measurement details, and summary calculations.
     """
 
+    def before_insert(self):
+        """Set default values before inserting a new document"""
+        # Auto-fill sales_person with logged-in user's full name if not set
+        if not self.sales_person:
+            user_full_name = frappe.utils.get_fullname(frappe.session.user)
+            if user_full_name:
+                self.sales_person = user_full_name
+
     def validate(self):
         """Validate document before saving"""
         self.validate_customer()
         self.validate_contractor_assignment()
         self.validate_measurement_details()
+        self.validate_project_uniqueness()
         # Calculate totals during validation to sync with client-side
         self.calculate_totals()
 
@@ -67,6 +76,25 @@ class MeasurementSheet(Document):
         # Validate each measurement detail row
         for row in self.measurement_details:
             self.validate_measurement_detail_row(row)
+
+    def validate_project_uniqueness(self):
+        """Ensure only one Measurement Sheet per Project"""
+        if self.project:
+            # Check for existing Measurement Sheet with same project
+            existing = frappe.db.exists(
+                "Measurement Sheet",
+                {
+                    "project": self.project,
+                    "name": ["!=", self.name],  # Exclude current document
+                    "docstatus": ["!=", 2]  # Exclude cancelled documents
+                }
+            )
+            if existing:
+                frappe.throw(
+                    f"Measurement Sheet '{existing}' already exists for Project '{self.project}'. "
+                    "Only one Measurement Sheet is allowed per Project.",
+                    title="Duplicate Project"
+                )
 
     def validate_measurement_detail_row(self, row):
         """Validate individual measurement detail row based on product type"""

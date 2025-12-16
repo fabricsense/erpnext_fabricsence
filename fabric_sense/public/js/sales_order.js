@@ -18,9 +18,9 @@ frappe.ui.form.on("Sales Order", {
 			setTimeout(() => add_measurement_sheet_connection(frm), 500);
 			setTimeout(() => add_measurement_sheet_connection(frm), 1500);
 			setTimeout(() => add_measurement_sheet_connection(frm), 3000);
-			
+
 			// Also add when connections tab is clicked
-			$(document).on('click', '[data-fieldname="connections"]', function() {
+			$(document).on("click", '[data-fieldname="connections"]', function () {
 				setTimeout(() => add_measurement_sheet_connection(frm), 200);
 			});
 		}
@@ -171,26 +171,70 @@ frappe.ui.form.on("Sales Order", {
 			);
 		}
 
-		// Check if status is "To Deliver"
-		if (frm.doc.status === "To Deliver" && frm.doc.docstatus === 1) {
+		// Hide "Update Items" button if manager approval status is "Approved"
+		if (frm.doc.manager_approval_status === "Approved") {
+			// Remove the "Update Items" button from the page actions
+			setTimeout(() => {
+				const pageActions = frm.page.page_actions;
+				pageActions.find(".btn").each(function () {
+					const btnText = $(this).text().trim();
+					if (btnText === "Update Items") {
+						$(this).remove();
+					}
+				});
+			}, 100);
+		}
+
+		// Check if status is "To Deliver" or "To Deliver and Bill"
+		if ((frm.doc.status === "To Deliver" || frm.doc.status === "To Deliver and Bill") && frm.doc.docstatus === 1) {
 			frm.add_custom_button(__("Send Order Ready Notification"), function () {
 				// Call server-side Python function
 				frappe.call({
 					method: "fabric_sense.fabric_sense.py.sales_order.send_order_ready_notification",
 					args: {
-						sales_order: frm.doc.name
+						sales_order: frm.doc.name,
 					},
-					callback: function(r) {
+					callback: function (r) {
 						if (!r.exc) {
 							frappe.msgprint({
 								title: __("Success"),
 								indicator: "green",
-								message: __("Order ready notification sent to customer")
+								message: __("Order ready notification sent to customer"),
 							});
 						}
-					}
+					},
 				});
 			}).addClass("btn-primary");
+
+			// Add Multi Material Request button under Create dropdown
+			frm.add_custom_button(
+				__("Multi Material Request"),
+				function () {
+					frappe.call({
+						method: "fabric_sense.fabric_sense.py.sales_order.create_multi_material_request",
+						args: {
+							sales_order: frm.doc.name,
+						},
+						freeze: true,
+						freeze_message: __("Creating Material Requests..."),
+						callback: function (r) {
+							if (r.message) {
+								if (r.message.purchase_mr || r.message.issue_mr) {
+									// Navigate to Material Request list
+									frappe.set_route("List", "Material Request");
+								} else {
+									frappe.msgprint({
+										title: __("No Items"),
+										indicator: "orange",
+										message: __("No items found to create Material Requests."),
+									});
+								}
+							}
+						},
+					});
+				},
+				__("Create")
+			);
 		}
 	},
 
@@ -223,29 +267,57 @@ frappe.ui.form.on("Sales Order", {
 	},
 });
 
+// Child table event handler for Sales Order Item
+frappe.ui.form.on("Sales Order Item", {
+	item_code: function (frm, cdt, cdn) {
+		let row = locals[cdt][cdn];
+
+		// Only proceed if item_code is selected and sku field is empty
+		if (row.item_code && !row.sku) {
+			// Fetch SKU from Item master
+			frappe.call({
+				method: "frappe.client.get_value",
+				args: {
+					doctype: "Item",
+					fieldname: "custom_sku",
+					filters: {
+						name: row.item_code,
+					},
+				},
+				callback: function (r) {
+					if (r.message && r.message.custom_sku) {
+						// Set the SKU value in the child table row
+						frappe.model.set_value(cdt, cdn, "custom_sku", r.message.custom_sku);
+					}
+				},
+			});
+		}
+	},
+});
+
 function add_measurement_sheet_connection(frm) {
 	// Multiple attempts to find the connections area
 	let connectionsArea = $('.form-dashboard[data-doctype="Sales Order"]');
-	
+
 	if (connectionsArea.length === 0) {
-		connectionsArea = $('.form-dashboard');
+		connectionsArea = $(".form-dashboard");
 	}
-	
+
 	if (connectionsArea.length === 0) {
 		connectionsArea = $('[data-fieldname="connections"] .form-dashboard-wrapper');
 	}
-	
+
 	if (connectionsArea.length === 0) {
 		// Try to find any dashboard wrapper
-		connectionsArea = $('.form-dashboard-wrapper');
+		connectionsArea = $(".form-dashboard-wrapper");
 	}
 
 	console.log("Connections area found:", connectionsArea.length);
-	
+
 	if (connectionsArea.length === 0) return;
 
 	// Check if we already added the connection
-	if (connectionsArea.find('.measurement-sheet-connection').length > 0) return;
+	if (connectionsArea.find(".measurement-sheet-connection").length > 0) return;
 
 	// Create a simple connection section that matches ERPNext style
 	const sourceSection = `
@@ -256,7 +328,9 @@ function add_measurement_sheet_connection(frm) {
 				</div>
 				<div class="section-body">
 					<div class="document-link" data-doctype="Measurement Sheet">
-						<a href="/app/measurement-sheet/${frm.doc.measurement_sheet}" class="btn-open no-decoration" title="${__('Open Measurement Sheet')}">
+						<a href="/app/measurement-sheet/${
+							frm.doc.measurement_sheet
+						}" class="btn-open no-decoration" title="${__("Open Measurement Sheet")}">
 							<span class="count">1</span>
 							${__("Measurement Sheet")}
 						</a>

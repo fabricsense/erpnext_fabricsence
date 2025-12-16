@@ -5,31 +5,46 @@ frappe.require("/assets/fabric_sense/js/helpers/measurement_sheet_helpers.js");
 
 const msHelper = fabric_sense.measurement_sheet;
 
-// Toggle tailoring/fitting dependent fields (project on parent, pattern/service charges on child rows)
-const toggle_tailoring_fields = (frm) => {
-	const is_tailoring_required = !!frm.doc.tailoring__fitting_required;
+// Toggle order type dependent fields (project on parent, pattern/service charges on child rows)
+const toggle_order_type_fields = (frm) => {
+	const is_fitting = frm.doc.order_type === "Fitting";
 
 	// Parent field: Project
-	frm.toggle_display("project", is_tailoring_required);
-	frm.set_df_property("project", "reqd", is_tailoring_required ? 1 : 0);
-	if (!is_tailoring_required && frm.doc.project) {
+	frm.toggle_display("project", is_fitting);
+	frm.set_df_property("project", "reqd", is_fitting ? 1 : 0);
+	if (!is_fitting && frm.doc.project) {
 		frm.set_value("project", null);
 	}
+	// Refresh project field to ensure required property is applied
+	frm.refresh_field("project");
 
 	// Child table fields: pattern + service charges section and its fields
 	const grid = frm.fields_dict.measurement_details?.grid;
 	if (grid) {
-		const child_fields = [
-			"pattern",
+		// Service charges section and its fields (always show/hide based on order_type)
+		const service_charge_fields = [
 			"service_charges_section",
 			"stitching_pattern",
 			"stitching_charge",
 			"fitting_type",
 			"fitting_charge"
 		];
-		child_fields.forEach((fieldname) => {
-			grid.toggle_display(fieldname, is_tailoring_required);
+		service_charge_fields.forEach((fieldname) => {
+			grid.toggle_display(fieldname, is_fitting);
 		});
+
+		// Pattern field: show only when order_type is "Fitting" AND product_type is Window Curtains or Roman Blinds
+		if (frm.doc.measurement_details && frm.doc.measurement_details.length > 0) {
+			frm.doc.measurement_details.forEach((row) => {
+				const show_pattern = is_fitting && 
+					(row.product_type === "Window Curtains" || row.product_type === "Roman Blinds");
+				grid.toggle_display("pattern", show_pattern, row.name);
+			});
+		} else {
+			// If no rows, just toggle based on order_type (will be properly set when product_type is selected)
+			grid.toggle_display("pattern", is_fitting);
+		}
+
 		// Refresh grid to reflect visibility changes on existing rows
 		frm.refresh_field("measurement_details");
 	}
@@ -38,12 +53,20 @@ const toggle_tailoring_fields = (frm) => {
 frappe.ui.form.on("Measurement Sheet", {
 	onload(frm) {
 		frm.refresh_field("measurement_details");
-		toggle_tailoring_fields(frm);
+		toggle_order_type_fields(frm);
 
 		// Ensure Project is filtered by the selected Customer on load
 		frm.set_query("project", () => ({
 			filters: { customer: frm.doc.customer || undefined },
 		}));
+
+		// Auto-fill sales_person with logged-in user's name for new documents
+		if (frm.is_new() && !frm.doc.sales_person) {
+			const user_full_name = frappe.user.full_name();
+			if (user_full_name) {
+				frm.set_value("sales_person", user_full_name);
+			}
+		}
 
 		if (frm.is_new() && !frm.doc.name && !frm._child_table_initialized) {
 			let should_clear = true;
@@ -92,7 +115,7 @@ frappe.ui.form.on("Measurement Sheet", {
 		msHelper.apply_item_filters(frm);
 		msHelper.clearItemRateCache?.();
 		msHelper.clearStockCache?.();
-		toggle_tailoring_fields(frm);
+		toggle_order_type_fields(frm);
 
 		// Keep Project filtered by Customer on refresh as well
 		frm.set_query("project", () => ({
@@ -179,8 +202,8 @@ frappe.ui.form.on("Measurement Sheet", {
 		frm.refresh_field("measurement_details");
 	},
 
-	tailoring__fitting_required(frm) {
-		toggle_tailoring_fields(frm);
+	order_type(frm) {
+		toggle_order_type_fields(frm);
 	},
 
 	site_visit_required(frm) {
@@ -225,6 +248,9 @@ frappe.ui.form.on("Measurement Sheet", {
 	before_save(frm) {
 		// Clear any previous error highlights
 		msHelper.clear_field_errors(frm);
+		
+		// Ensure order_type fields are properly toggled before validation
+		toggle_order_type_fields(frm);
 		
 		// Validate all mandatory fields
 		const errors = msHelper.validate_mandatory_fields(frm);
@@ -274,6 +300,15 @@ frappe.ui.form.on("Measurement Detail", {
 		// (fabric fields are cleared in reset_fields_for_product_type)
 		if (!["Window Curtains", "Roman Blinds"].includes(row.product_type)) {
 			msHelper.highlight_fabric_field(frm, cdt, cdn, false);
+		}
+
+		// Update pattern field visibility based on order_type and product_type
+		const grid = frm.fields_dict.measurement_details?.grid;
+		if (grid) {
+			const is_fitting = frm.doc.order_type === "Fitting";
+			const show_pattern = is_fitting && 
+				(row.product_type === "Window Curtains" || row.product_type === "Roman Blinds");
+			grid.toggle_display("pattern", show_pattern, row.name);
 		}
 
 		// If switching to/from Window Curtains/Roman Blinds and stitching_pattern exists, recalculate stitching_charge
@@ -465,6 +500,13 @@ frappe.ui.form.on("Measurement Detail", {
 		if (row.lead_rope) {
 			const rate = await msHelper.fetch_item_rate(row.lead_rope, null, frm);
 			await frappe.model.set_value(cdt, cdn, "lead_rope_rate", rate || 0);
+		} else {
+			// Clear lead rope related fields when lead_rope is deselected
+			await frappe.model.set_value(cdt, cdn, {
+				lead_rope_rate: 0,
+				lead_rope_qty: 0,
+				lead_rope_amount: 0
+			});
 		}
 		msHelper.calculate_row_amounts(frm, cdt, cdn);
 	},
@@ -482,6 +524,14 @@ frappe.ui.form.on("Measurement Detail", {
 		if (row.track_rod) {
 			const rate = await msHelper.fetch_item_rate(row.track_rod, null, frm);
 			await frappe.model.set_value(cdt, cdn, "track_rod_rate", rate || 0);
+		} else {
+			// Clear track/rod related fields when track_rod is deselected
+			await frappe.model.set_value(cdt, cdn, {
+				track_rod_rate: 0,
+				track_rod_qty: 0,
+				track_rod_amount: 0,
+				track_rod_type: ""  // Clear track_rod_type when track_rod is deselected
+			});
 		}
 		msHelper.calculate_row_amounts(frm, cdt, cdn);
 	},
