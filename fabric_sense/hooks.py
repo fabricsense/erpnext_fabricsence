@@ -83,10 +83,12 @@ doc_events = {
         "on_submit": "fabric_sense.fabric_sense.py.sales_invoice_notifications.send_customer_invoice_notification",
     },
     "Delivery Note": {
+        "before_submit": "fabric_sense.fabric_sense.py.delivery_note.adjust_stock_ledger_entries_for_delivery_note",
         "on_submit": [
             "fabric_sense.fabric_sense.py.delivery_note.send_customer_delivery_notification",
             "fabric_sense.fabric_sense.py.delivery_note.update_additional_material_request_status",
         ],
+        "after_submit": "fabric_sense.fabric_sense.py.delivery_note.restore_original_stock_ledger_function",
     },
     "Payment Entry": {
         "validate": "fabric_sense.fabric_sense.py.payment_entry.set_manager_approval_status_for_deductions",
@@ -106,6 +108,9 @@ doc_events = {
         "on_update": [
             "fabric_sense.fabric_sense.py.task.create_contractor_payment_history"
         ],
+    },
+    "Stock Ledger Entry": {
+        "on_submit": "fabric_sense.fabric_sense.py.reorder_monitoring.check_reorder_level_on_stock_change",
     },
 }
 # Svg Icons
@@ -245,6 +250,7 @@ override_doctype_dashboards = {
     "Sales Order": "fabric_sense.fabric_sense.py.sales_order_dashboard.get_data",
     "Project": "fabric_sense.fabric_sense.py.project_dashboard.get_data",
     "Customer": "fabric_sense.fabric_sense.py.customer_dashboard.get_data",
+    "Task": "fabric_sense.fabric_sense.py.task_dashboard.get_data",
 }
 
 fixtures = [

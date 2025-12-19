@@ -1,7 +1,7 @@
 [
  {
   "charts": [],
-  "content": "[{\"id\":\"QSxlmjQOlf\",\"type\":\"header\",\"data\":{\"text\":\"<span style=\\\"font-size: 18px; letter-spacing: 0.18px;\\\"><b>Your Shortcuts</b></span>\",\"col\":12}},{\"id\":\"uWRV0ZCSuc\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Lead\",\"col\":3}},{\"id\":\"B1TEwr9fNB\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Customer\",\"col\":3}},{\"id\":\"Rx03C82-d2\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Project\",\"col\":3}},{\"id\":\"wO2G5cYcmp\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Item\",\"col\":3}},{\"id\":\"rRtHeBY4nZ\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Measurement Sheet\",\"col\":3}},{\"id\":\"vDAIT2lYh_\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Tailoring Sheet\",\"col\":3}},{\"id\":\"Ra-2_cXrxW\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Sales Order\",\"col\":3}},{\"id\":\"JHbzGoZ9Ht\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Task\",\"col\":3}},{\"id\":\"MXpOkuvE8O\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Material Request\",\"col\":3}},{\"id\":\"S1VBvoYQQ3\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Stock Entry\",\"col\":3}},{\"id\":\"-ZeL4NHsvE\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Pattern\",\"col\":3}},{\"id\":\"Txphx9UAGX\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Area\",\"col\":3}},{\"id\":\"pBJUkYLX1m\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Purchase Order\",\"col\":3}},{\"id\":\"4J7bGtLfIX\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Delivery Note\",\"col\":3}},{\"id\":\"hsdTMQZ6Yr\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Sales Invoice\",\"col\":3}},{\"id\":\"DZ0yMuq4YX\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Payment Entry\",\"col\":3}},{\"id\":\"CdZbYTF-J-\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Contractor Payment History\",\"col\":3}},{\"id\":\"k33hcHijNV\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Item Price\",\"col\":3}},{\"id\":\"_izoek3dX6\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Services\",\"col\":3}}]",
+  "content": "[{\"id\":\"QSxlmjQOlf\",\"type\":\"header\",\"data\":{\"text\":\"<span style=\\\"font-size: 18px; letter-spacing: 0.18px;\\\"><b>Your Shortcuts</b></span>\",\"col\":12}},{\"id\":\"uWRV0ZCSuc\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Lead\",\"col\":3}},{\"id\":\"B1TEwr9fNB\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Customer\",\"col\":3}},{\"id\":\"Rx03C82-d2\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Project\",\"col\":3}},{\"id\":\"wO2G5cYcmp\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Item\",\"col\":3}},{\"id\":\"rRtHeBY4nZ\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Measurement Sheet\",\"col\":3}},{\"id\":\"vDAIT2lYh_\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Tailoring Sheet\",\"col\":3}},{\"id\":\"Ra-2_cXrxW\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Sales Order\",\"col\":3}},{\"id\":\"JHbzGoZ9Ht\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Task\",\"col\":3}},{\"id\":\"MXpOkuvE8O\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Material Request\",\"col\":3}},{\"id\":\"S1VBvoYQQ3\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Stock Entry\",\"col\":3}},{\"id\":\"-ZeL4NHsvE\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Pattern\",\"col\":3}},{\"id\":\"Txphx9UAGX\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Area\",\"col\":3}},{\"id\":\"pBJUkYLX1m\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Purchase Order\",\"col\":3}},{\"id\":\"4J7bGtLfIX\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Delivery Note\",\"col\":3}},{\"id\":\"hsdTMQZ6Yr\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Sales Invoice\",\"col\":3}},{\"id\":\"DZ0yMuq4YX\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Payment Entry\",\"col\":3}},{\"id\":\"CdZbYTF-J-\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Contractor Payment History\",\"col\":3}},{\"id\":\"k33hcHijNV\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Item Price\",\"col\":3}},{\"id\":\"_izoek3dX6\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Services\",\"col\":3}},{\"id\":\"D2sd5btQkK\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Reorder Notification\",\"col\":3}}]",
   "custom_blocks": [],
   "docstatus": 0,
   "doctype": "Workspace",
@@ -12,7 +12,7 @@
   "is_hidden": 0,
   "label": "Fabric Sense",
   "links": [],
-  "modified": "2025-12-15 17:06:04.905262",
+  "modified": "2025-12-19 18:51:31.074502",
   "module": "Fabric Sense",
   "name": "Fabric Sense",
   "number_cards": [],
@@ -37,6 +37,23 @@
     "report_ref_doctype": null,
     "restrict_to_domain": null,
     "stats_filter": "[]",
+    "type": "DocType",
+    "url": null
+   },
+   {
+    "color": "Red",
+    "doc_view": "List",
+    "format": null,
+    "icon": null,
+    "kanban_board": null,
+    "label": "Reorder Notification",
+    "link_to": "Reorder Notification",
+    "parent": "Fabric Sense",
+    "parentfield": "shortcuts",
+    "parenttype": "Workspace",
+    "report_ref_doctype": null,
+    "restrict_to_domain": null,
+    "stats_filter": "[[\"Reorder Notification\",\"status\",\"=\",\"Pending\",false]]",
     "type": "DocType",
     "url": null
    },

@@ -311,6 +311,7 @@ frappe.provide("fabric_sense.measurement_sheet");
 
 		if (row.product_type !== "Blinds") {
 			row.selection = "";
+			row.selection_rate = 0;
 		}
 
 		if (!["Window Curtains", "Roman Blinds"].includes(row.product_type)) {
@@ -420,27 +421,16 @@ frappe.provide("fabric_sense.measurement_sheet");
 			price_list = await ns.get_price_list_from_customer(frm.doc.customer);
 		}
 
+		console.log(`[Item Selection] Selected Item: ${item_code}, Price List: ${price_list || 'None'}`);
+
 		// Create cache key that includes both item_code and price_list
 		const cacheKey = price_list ? `${item_code}::${price_list}` : `${item_code}::default`;
 
-		if (itemRateCache[cacheKey] !== undefined) {
+		// Only use cache for positive rates, never cache zero/null rates
+		if (itemRateCache[cacheKey] !== undefined && itemRateCache[cacheKey] > 0) {
+			console.log(`[Item Selection] Selection Rate (from cache): ${itemRateCache[cacheKey]}`);
 			return Promise.resolve(itemRateCache[cacheKey]);
 		}
-
-		// Helper function to get standard_rate from Item
-		const getStandardRate = async () => {
-			try {
-				const itemData = await frappe.db.get_value("Item", item_code, "standard_rate");
-				if (itemData && itemData.message && itemData.message.standard_rate != null) {
-					const rate = parseFloat(itemData.message.standard_rate);
-					return isNaN(rate) ? null : rate;
-				}
-				return null;
-			} catch (err) {
-				console.error(`Error fetching standard rate for ${item_code}:`, err);
-				return null;
-			}
-		};
 
 		try {
 			// First, try to get price from the specific price_list (if provided)
@@ -455,7 +445,11 @@ frappe.provide("fabric_sense.measurement_sheet");
 				if (prices && prices.length > 0 && prices[0].price_list_rate != null) {
 					const rate = parseFloat(prices[0].price_list_rate);
 					if (!isNaN(rate)) {
-						itemRateCache[cacheKey] = rate;
+						// Only cache positive rates
+						if (rate > 0) {
+							itemRateCache[cacheKey] = rate;
+						}
+						console.log(`[Item Selection] Selection Rate (from customer price list '${price_list}'): ${rate}`);
 						return rate;
 					}
 				}
@@ -463,6 +457,8 @@ frappe.provide("fabric_sense.measurement_sheet");
 
 			// Fallback: Try to get price from default selling price list (from Selling Settings)
 			const default_price_list = await ns.get_default_selling_price_list();
+			console.log(`[Item Selection] Trying default price list: ${default_price_list || 'None'}`);
+			
 			if (default_price_list && default_price_list !== price_list) {
 				const defaultPrices = await frappe.db.get_list("Item Price", {
 					filters: { item_code, selling: 1, price_list: default_price_list },
@@ -478,38 +474,24 @@ frappe.provide("fabric_sense.measurement_sheet");
 				) {
 					const rate = parseFloat(defaultPrices[0].price_list_rate);
 					if (!isNaN(rate)) {
-						itemRateCache[cacheKey] = rate;
+						// Only cache positive rates
+						if (rate > 0) {
+							itemRateCache[cacheKey] = rate;
+						}
+						console.log(`[Item Selection] Selection Rate (from default price list '${default_price_list}'): ${rate}`);
 						return rate;
 					}
 				}
 			}
 
-			// Final fallback: Only if no price found in customer-group or default price list,
-			// try to get price from any selling price list
-			const anyPrices = await frappe.db.get_list("Item Price", {
-				filters: { item_code, selling: 1 },
-				fields: ["price_list_rate"],
-				order_by: "modified desc",
-				limit: 1,
-			});
-
-			if (anyPrices && anyPrices.length > 0 && anyPrices[0].price_list_rate != null) {
-				const rate = parseFloat(anyPrices[0].price_list_rate);
-				if (!isNaN(rate)) {
-					itemRateCache[cacheKey] = rate;
-					return rate;
-				}
-			}
-
-			// Last resort: Get standard_rate from Item
-			const rate = await getStandardRate();
-			itemRateCache[cacheKey] = rate;
-			return rate;
+			// No price found in any price list - return 0
+			itemRateCache[cacheKey] = 0;
+			console.log(`[Item Selection] Selection Rate: 0 (no price found in any price list)`);
+			return 0;
 		} catch (error) {
-			console.error(`Error fetching item rate for ${item_code}:`, error);
-			const rate = await getStandardRate();
-			itemRateCache[cacheKey] = rate;
-			return rate;
+			itemRateCache[cacheKey] = 0;
+			console.log(`[Item Selection] Selection Rate: 0 (error occurred)`);
+			return 0;
 		}
 	};
 
@@ -953,7 +935,7 @@ frappe.provide("fabric_sense.measurement_sheet");
 				message: message,
 				indicator: "orange",
 			},
-			5
+			15
 		);
 	};
 

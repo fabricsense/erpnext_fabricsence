@@ -2,6 +2,15 @@ frappe.ui.form.on("Item", {
 	refresh: function (frm) {
 		// Update preferred vendor options on form load
 		update_preferred_vendor_options(frm);
+		
+		// Check if item group exists in any brand and show/hide brand field accordingly
+		toggle_brand_field_visibility(frm);
+		
+		// Set up brands filter based on item group
+		setup_brands_filter(frm);
+		
+		// Update catalogue options based on selected brand (preserve existing value on refresh)
+		update_catalogue_options(frm, true);
 	},
 
 	custom_vendor_code_selection: function (frm) {
@@ -30,6 +39,49 @@ frappe.ui.form.on("Item", {
 				}
 			});
 		}
+	},
+
+	item_group: function (frm) {
+		// Auto-fill category code when Item Group is selected
+		if (frm.doc.item_group) {
+			console.log("Item Group selected:", frm.doc.item_group);
+
+			// Fetch Item Group to get the category code
+			frappe.call({
+				method: "frappe.client.get",
+				args: {
+					doctype: "Item Group",
+					name: frm.doc.item_group,
+				},
+				callback: function (r) {
+					if (r.message && r.message.custom_category_code) {
+						console.log("Category Code from Item Group:", r.message.custom_category_code);
+						frm.set_value("custom_category_code", r.message.custom_category_code);
+					} else {
+						console.log("No category code found in Item Group");
+						// Clear category code if Item Group has no category code
+						frm.set_value("custom_category_code", null);
+					}
+				},
+			});
+		} else {
+			// Clear the category code field if Item Group is cleared
+			frm.set_value("custom_category_code", null);
+		}
+		
+		// Check if item group exists in any brand and show/hide brand field accordingly
+		toggle_brand_field_visibility(frm);
+		
+		// Update brands filter and clear brands field when item group changes
+		setup_brands_filter(frm);
+		if (!frm.doc.item_group) {
+			frm.set_value("custom_brands", null);
+		}
+	},
+
+	custom_brands: function (frm) {
+		// Update catalogue options when brand is selected
+		update_catalogue_options(frm);
 	},
 
 	gst_hsn_code: function (frm) {
@@ -188,4 +240,116 @@ function fetch_gst_rate_from_template(frm, item_tax_template) {
 			}
 		},
 	});
+}
+
+function setup_brands_filter(frm) {
+	// Set up filter for brands field based on selected item group
+	if (frm.doc.item_group) {
+		console.log("Setting up brands filter for item group:", frm.doc.item_group);
+		
+		frm.set_query("custom_brands", function() {
+			return {
+				query: "fabric_sense.fabric_sense.doctype.brands.brands.get_brands_by_item_group",
+				filters: {
+					item_group: frm.doc.item_group
+				}
+			};
+		});
+	} else {
+		// Clear the filter if no item group is selected
+		frm.set_query("custom_brands", function() {
+			return {};
+		});
+	}
+}
+
+function update_catalogue_options(frm, preserve_value = false) {
+	// Update catalogue field options based on selected brand
+	if (frm.doc.custom_brands) {
+		console.log("Brand selected:", frm.doc.custom_brands);
+		
+		// Fetch catalogues from the selected brand
+		frappe.call({
+			method: "fabric_sense.fabric_sense.doctype.brands.brands.get_catalogues_by_brand",
+			args: {
+				brand: frm.doc.custom_brands
+			},
+			callback: function (r) {
+				console.log("Catalogues received:", r.message);
+				
+				if (r.message && r.message.length > 0) {
+					// Set the options for the catalogue field
+					let options = r.message.join("\n");
+					frm.set_df_property("custom_catalogue", "options", options);
+					
+					// Only clear the catalogue value if this is a brand change (not form refresh)
+					// and the current value is not in the new options
+					if (!preserve_value && frm.doc.custom_catalogue) {
+						if (!r.message.includes(frm.doc.custom_catalogue)) {
+							frm.set_value("custom_catalogue", "");
+						}
+					}
+				} else {
+					// Clear options if no catalogues found
+					frm.set_df_property("custom_catalogue", "options", "");
+					// Only clear value if not preserving (i.e., during brand change)
+					if (!preserve_value && frm.doc.custom_catalogue) {
+						frm.set_value("custom_catalogue", "");
+					}
+				}
+				
+				frm.refresh_field("custom_catalogue");
+			}
+		});
+	} else {
+		// Clear catalogue options and value if no brand is selected
+		frm.set_df_property("custom_catalogue", "options", "");
+		frm.refresh_field("custom_catalogue");
+		// Only clear value if not preserving (i.e., during brand change)
+		if (!preserve_value && frm.doc.custom_catalogue) {
+			frm.set_value("custom_catalogue", "");
+		}
+	}
+}
+
+function toggle_brand_field_visibility(frm) {
+	// Show/hide brand field based on whether item group exists in any brand
+	if (frm.doc.item_group) {
+		console.log("Checking if item group exists in any brand:", frm.doc.item_group);
+		
+		// Check if the item group exists in any brand's sub-categories
+		frappe.call({
+			method: "fabric_sense.fabric_sense.doctype.brands.brands.check_item_group_in_brands",
+			args: {
+				item_group: frm.doc.item_group
+			},
+			callback: function (r) {
+				console.log("Item group exists in brands:", r.message);
+				
+				if (r.message) {
+					// Show brand field if item group exists in any brand
+					frm.set_df_property("custom_brands", "hidden", 0);
+					frm.set_df_property("custom_catalogue", "hidden", 0);
+				} else {
+					// Hide brand field and clear its value if item group doesn't exist in any brand
+					frm.set_df_property("custom_brands", "hidden", 1);
+					frm.set_df_property("custom_catalogue", "hidden", 1);
+					if (frm.doc.custom_brands) {
+						frm.set_value("custom_brands", null);
+					}
+					if (frm.doc.custom_catalogue) {
+						frm.set_value("custom_catalogue", null);
+					}
+				}
+				frm.refresh_field("custom_brands");
+				frm.refresh_field("custom_catalogue");
+			}
+		});
+	} else {
+		// Hide brand field if no item group is selected
+		frm.set_df_property("custom_brands", "hidden", 1);
+		frm.set_df_property("custom_catalogue", "hidden", 1);
+		frm.refresh_field("custom_brands");
+		frm.refresh_field("custom_catalogue");
+	}
 }

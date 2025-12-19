@@ -142,7 +142,7 @@
    "creation": "2025-12-10 00:00:00",
    "default": "Pending",
    "depends_on": null,
-   "description": "Manager approval status",
+   "description": null,
    "docstatus": 0,
    "dt": "Sales Order",
    "fetch_from": null,

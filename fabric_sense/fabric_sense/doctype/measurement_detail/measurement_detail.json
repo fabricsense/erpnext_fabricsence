@@ -47,6 +47,7 @@
   "track_rod_rate",
   "track_rod_amount",
   "selection",
+  "selection_rate",
   "total_amount_section",
   "amount",
   "memo_section",
@@ -87,6 +88,7 @@
    "depends_on": "eval:doc.product_type=='Tracks/Rods'",
    "fieldname": "design",
    "fieldtype": "Data",
+   "hidden": 1,
    "label": "Design"
   },
   {
@@ -281,7 +283,15 @@
    "fieldname": "selection",
    "fieldtype": "Link",
    "label": "Selection",
+   "mandatory_depends_on": "eval:doc.product_type=='Blinds'",
    "options": "Item"
+  },
+  {
+   "depends_on": "eval:doc.product_type=='Blinds' && doc.selection",
+   "fieldname": "selection_rate",
+   "fieldtype": "Currency",
+   "label": "Hardware Rate",
+   "read_only": 1
   },
   {
    "fieldname": "amount",
@@ -354,7 +364,7 @@
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2025-12-15 17:55:13.085657",
+ "modified": "2025-12-18 11:40:49.910949",
  "modified_by": "Administrator",
  "module": "Fabric Sense",
  "name": "Measurement Detail",

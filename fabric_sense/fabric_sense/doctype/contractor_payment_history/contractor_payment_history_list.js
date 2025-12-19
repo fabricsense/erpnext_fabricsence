@@ -22,6 +22,9 @@ frappe.listview_settings["Contractor Payment History"] = {
 						onchange: function() {
 							let contractor = dialog.get_value('contractor');
 							if (contractor) {
+								// Reset selected total when contractor changes
+								$('.selected-balance-total').text(format_currency(0));
+								
 								// Fetch unpaid records for the selected contractor
 								frappe.call({
 									method: 'fabric_sense.fabric_sense.doctype.contractor_payment_history.contractor_payment_history.get_unpaid_records_for_contractor',
@@ -43,6 +46,8 @@ frappe.listview_settings["Contractor Payment History"] = {
 									}
 								});
 							} else {
+								// Reset selected total when contractor is cleared
+								$('.selected-balance-total').text(format_currency(0));
 								dialog.fields_dict.unpaid_records_html.$wrapper.html('');
 								dialog.fields_dict.unpaid_records_section.df.hidden = 1;
 								dialog.fields_dict.unpaid_records_section.refresh();
@@ -79,48 +84,25 @@ frappe.listview_settings["Contractor Payment History"] = {
 						return;
 					}
 					
-					// Calculate total balance from selected records
-					let total_balance = 0;
-					checked_records.forEach(function(record_name) {
-						let balance = parseFloat(dialog.$wrapper.find('.unpaid-record-check[data-record="' + record_name + '"]').data('balance')) || 0;
-						total_balance += balance;
-					});
-					
 					dialog.hide();
 					
-					// Gather record details for child table
-					let record_details = [];
-					checked_records.forEach(function(record_name) {
-						let $checkbox = dialog.$wrapper.find('.unpaid-record-check[data-record="' + record_name + '"]');
-						record_details.push({
-							name: record_name,
-							balance: parseFloat($checkbox.data('balance')) || 0,
-							amount: parseFloat($checkbox.data('amount')) || 0,
-							task: $checkbox.data('task') || '',
-							project: $checkbox.data('project') || '',
-							status: $checkbox.data('status') || ''
+					// Create Payment Entry using server method
+					if (checked_records.length === 1) {
+						// For single record, use the standard make_payment_entry method
+						frappe.model.open_mapped_doc({
+							method: "fabric_sense.fabric_sense.doctype.contractor_payment_history.contractor_payment_history.make_payment_entry",
+							source_name: checked_records[0]
 						});
-					});
-					
-					// Create Payment Entry with selected records
-					frappe.model.with_doctype("Payment Entry", function() {
-						let payment_doc = frappe.model.get_new_doc("Payment Entry");
-						
-						payment_doc.payment_type = "Pay";
-						payment_doc.party_type = "Employee";
-						payment_doc.party = values.contractor;
-						payment_doc.paid_amount = total_balance;
-						payment_doc.received_amount = total_balance;
-						payment_doc.remarks = "Payment for " + checked_records.length + " record(s): " + checked_records.join(", ");
-						
-						// Store in sessionStorage for payment_entry.js to pick up
-						sessionStorage.setItem("force_party_type_employee", "1");
-						sessionStorage.setItem("contractor_party", values.contractor);
-						sessionStorage.setItem("contractor_balance", total_balance);
-						sessionStorage.setItem("contractor_payment_records", JSON.stringify(record_details));
-						
-						frappe.set_route("Form", "Payment Entry", payment_doc.name);
-					});
+					} else {
+						// For multiple records, use the make_payment_entry_for_multiple method
+						frappe.model.open_mapped_doc({
+							method: "fabric_sense.fabric_sense.doctype.contractor_payment_history.contractor_payment_history.make_payment_entry_for_multiple",
+							args: {
+								contractor: values.contractor,
+								record_names: checked_records
+							}
+						});
+					}
 				}
 			});
 			dialog.show();
@@ -141,7 +123,6 @@ frappe.listview_settings["Contractor Payment History"] = {
 							<th style="width: 40px;"></th>
 							<th>${__('ID')}</th>
 							<th>${__('Task')}</th>
-							<th>${__('Project')}</th>
 							<th class="text-right">${__('Amount')}</th>
 							<th class="text-right">${__('Paid')}</th>
 							<th class="text-right">${__('Balance')}</th>
@@ -159,7 +140,7 @@ frappe.listview_settings["Contractor Payment History"] = {
 			html += `
 				<tr>
 					<td class="text-center">
-						<input type="checkbox" class="unpaid-record-check" 
+						<input type="checkbox" class="unpaid-record-check"
 							data-record="${record.name}" 
 							data-balance="${record.balance || 0}"
 							data-amount="${record.amount || 0}"
@@ -169,7 +150,6 @@ frappe.listview_settings["Contractor Payment History"] = {
 					</td>
 					<td><a href="/app/contractor-payment-history/${record.name}" target="_blank">${record.name}</a></td>
 					<td>${record.task || '-'}</td>
-					<td>${record.project || '-'}</td>
 					<td class="text-right">${format_currency(record.amount || 0)}</td>
 					<td class="text-right">${format_currency(record.amount_paid || 0)}</td>
 					<td class="text-right"><strong>${format_currency(record.balance || 0)}</strong></td>
@@ -182,14 +162,14 @@ frappe.listview_settings["Contractor Payment History"] = {
 					</tbody>
 					<tfoot>
 						<tr class="font-weight-bold bg-light">
-							<td colspan="6" class="text-right">${__('Total Balance')}:</td>
+							<td colspan="5" class="text-right">${__('Total Balance')}:</td>
 							<td class="text-right">${format_currency(total_balance)}</td>
 							<td></td>
 						</tr>
 					</tfoot>
 				</table>
 				<div class="selected-total mt-2 text-right text-muted">
-					${__('Selected Total')}: <strong class="selected-balance-total">0.00</strong>
+					${__('Selected Total')}: <strong class="selected-balance-total">${format_currency(0)}</strong>
 				</div>
 			</div>
 		`;
@@ -200,6 +180,9 @@ frappe.listview_settings["Contractor Payment History"] = {
 			$('.unpaid-record-check').on('change', function() {
 				frappe.listview_settings["Contractor Payment History"].update_selected_total();
 			});
+			
+			// Initialize selected total to 0 (no checkboxes are selected by default)
+			$('.selected-balance-total').text(format_currency(0));
 		}, 100);
 		
 		return html;

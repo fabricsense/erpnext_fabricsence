@@ -310,9 +310,6 @@ class MeasurementSheet(Document):
 				<div style="max-width: 600px; margin: 0 auto; padding: 20px;">
 					<!-- Header Card -->
 					<div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 12px 12px 0 0; padding: 32px 24px; text-align: center;">
-						<div style="background-color: white; width: 60px; height: 60px; border-radius: 50%; margin: 0 auto 12px; padding-top: 8px;">
-							<span style="font-size: 28px;">📏</span>
-						</div>
 						<h1 style="margin: 0; color: white; font-size: 24px; font-weight: 700; letter-spacing: -0.5px;">New Measurement Assignment</h1>
 						<p style="margin: 8px 0 0; color: rgba(255,255,255,0.9); font-size: 14px;">You have been assigned to collect measurements</p>
 					</div>
@@ -500,15 +497,20 @@ def _get_selection_item_rates(
     selection_items: List[str], price_list: Optional[str] = None
 ) -> Dict[str, float]:
     """
-    Get rates for selection items (Blinds) from Item Price or Item standard_rate.
+    Get rates for selection items (Blinds) from Item Price.
     Uses batch queries to avoid N+1 query problem.
+    
+    Price lookup order:
+    1. Customer's price list (if provided)
+    2. Default Selling Price List (from Selling Settings)
+    3. If not found: 0.0
 
     Args:
             selection_items: List of item codes
             price_list: Optional price list name to filter by
 
     Returns:
-            Mapping of item_code to rate (defaults to 0 if not found)
+            Mapping of item_code to rate (defaults to 0 if not found in price lists)
     """
     if not selection_items:
         return {}
@@ -564,25 +566,10 @@ def _get_selection_item_rates(
                     item_prices[price.item_code] = float(price.price_list_rate)
                     seen_items.add(price.item_code)
 
-    # Final fallback: Get standard_rates for items still without prices
-    items_without_prices = [item for item in unique_items if item not in item_prices]
-    item_rates = {}
-    if items_without_prices:
-        items = frappe.db.get_all(
-            "Item",
-            filters={"name": ["in", items_without_prices]},
-            fields=["name", "standard_rate"],
-        )
-        item_rates = {
-            item.name: float(item.standard_rate or 0)
-            for item in items
-            if item.standard_rate is not None
-        }
-
-    # Ensure all items have a rate (default to 0)
+    # Ensure all items have a rate (default to 0 if not found in any price list)
     result = {}
     for item in unique_items:
-        result[item] = item_prices.get(item, item_rates.get(item, 0.0))
+        result[item] = item_prices.get(item, 0.0)
 
     return result
 
@@ -1164,3 +1151,145 @@ def get_lining_items(doctype, txt, searchfield, start, page_len, filters):
             "Lining Items Query Error",
         )
         return []
+
+
+@frappe.whitelist()
+@frappe.validate_and_sanitize_search_inputs
+def get_available_projects(doctype, txt, searchfield, start, page_len, filters):
+    """
+    Returns projects that are not already assigned to other measurement sheets.
+    Excludes projects that are already linked to existing measurement sheets (except current one if editing).
+    
+    Args:
+        doctype (str): Doctype name (for query function signature)
+        txt (str): Search text
+        searchfield (str): Field to search in
+        start (int): Pagination start
+        page_len (int): Page length
+        filters (dict): Additional filters including customer and current measurement sheet name
+    
+    Returns:
+        list: List of available project names
+    """
+    try:
+        # Get customer filter if provided
+        customer = filters.get("customer") if filters else None
+        current_measurement_sheet = filters.get("current_measurement_sheet") if filters else None
+        
+        # Base query to get projects
+        query = """
+            SELECT DISTINCT p.name
+            FROM `tabProject` p
+            WHERE p.name NOT IN (
+                SELECT DISTINCT ms.project
+                FROM `tabMeasurement Sheet` ms
+                WHERE ms.project IS NOT NULL 
+                AND ms.project != ''
+                AND ms.docstatus != 2
+        """
+        
+        params = []
+        
+        # Exclude current measurement sheet if editing
+        if current_measurement_sheet:
+            query += " AND ms.name != %s"
+            params.append(current_measurement_sheet)
+            
+        query += ")"
+        
+        # Filter by customer if provided
+        if customer:
+            query += " AND p.customer = %s"
+            params.append(customer)
+            
+        # Apply search text
+        if txt:
+            query += f" AND (p.{searchfield} LIKE %s OR p.project_name LIKE %s)"
+            params.extend([f"%{txt}%", f"%{txt}%"])
+            
+        # Add ordering and pagination
+        query += " ORDER BY p.project_name LIMIT %s OFFSET %s"
+        params.extend([page_len, start])
+        
+        result = frappe.db.sql(query, params, as_dict=False)
+        return result
+        
+    except Exception as e:
+        frappe.log_error(
+            f"Error in get_available_projects: {str(e)}\n{frappe.get_traceback()}",
+            "Get Available Projects Error",
+        )
+        return []
+
+
+@frappe.whitelist()
+def get_fresh_item_price(item_code, customer=None):
+    """
+    Get fresh item price respecting price list restrictions.
+    Uses same logic as fetch_item_rate: customer price list → default → 0
+    This method is whitelisted for client-side calls.
+    
+    Args:
+        item_code: Item code to get price for
+        customer: Optional customer name to determine price list
+    
+    Returns:
+        Dict with price_list_rate and source
+    """
+    try:
+        if not item_code:
+            return {"price_list_rate": 0, "source": "no_item"}
+        
+        # Step 1: Get customer's price list (if customer provided)
+        price_list = None
+        if customer:
+            price_list = _get_price_list_from_customer(customer)
+        
+        # Step 2: Try customer's price list first
+        if price_list:
+            item_price = frappe.db.get_value(
+                "Item Price",
+                {
+                    "item_code": item_code,
+                    "selling": 1,
+                    "price_list": price_list,
+                },
+                "price_list_rate",
+                order_by="modified desc",
+            )
+            if item_price and item_price > 0:
+                return {
+                    "price_list_rate": float(item_price),
+                    "source": "customer_price_list",
+                    "price_list": price_list,
+                }
+        
+        # Step 3: Try default selling price list
+        default_price_list = _get_default_selling_price_list()
+        if default_price_list and default_price_list != price_list:
+            item_price = frappe.db.get_value(
+                "Item Price",
+                {
+                    "item_code": item_code,
+                    "selling": 1,
+                    "price_list": default_price_list,
+                },
+                "price_list_rate",
+                order_by="modified desc",
+            )
+            if item_price and item_price > 0:
+                return {
+                    "price_list_rate": float(item_price),
+                    "source": "default_price_list",
+                    "price_list": default_price_list,
+                }
+        
+        # Step 4: Return 0 if not found (NO standard_rate fallback)
+        return {"price_list_rate": 0, "source": "not_found"}
+        
+    except Exception as e:
+        frappe.log_error(
+            f"Error in get_fresh_item_price for {item_code}: {str(e)}\n{frappe.get_traceback()}",
+            "Get Fresh Item Price Error",
+        )
+        return {"price_list_rate": 0, "source": "error"}

@@ -74,7 +74,8 @@ class CustomItem(Item):
 
     def validate(self):
         """Additional validations and SKU regeneration on edit"""
-        super().validate()
+        # Call parent validate but skip reorder quantity validation
+        self.validate_without_reorder_qty_check()
 
         # Handle SKU logic for both new and existing items
         if not self.is_new():
@@ -102,3 +103,29 @@ class CustomItem(Item):
                 elif not self.custom_category_code and not self.custom_vendor_code:
                     # Both fields are empty - clear the SKU (for service items)
                     self.custom_sku = None
+
+    def validate_without_reorder_qty_check(self):
+        """Custom validation that skips reorder quantity validation"""
+        # Call all parent validation methods except the reorder validation
+        from erpnext.stock.doctype.item.item import Item
+        
+        # Temporarily store reorder data to bypass validation
+        original_reorder_data = []
+        for d in self.reorder_levels:
+            if d.warehouse_reorder_level and not d.warehouse_reorder_qty:
+                original_reorder_data.append({
+                    'idx': d.idx,
+                    'warehouse_reorder_qty': d.warehouse_reorder_qty
+                })
+                # Temporarily set a dummy value to pass validation
+                d.warehouse_reorder_qty = 1
+        
+        # Call parent validate
+        super().validate()
+        
+        # Restore original reorder quantity values (including None/0)
+        for data in original_reorder_data:
+            for d in self.reorder_levels:
+                if d.idx == data['idx']:
+                    d.warehouse_reorder_qty = data['warehouse_reorder_qty']
+                    break

@@ -97,7 +97,6 @@
    "fieldname": "design",
    "fieldtype": "Data",
    "label": "Design",
-   "mandatory_depends_on": "eval:doc.product_type=='Tracks/Rods'",
    "read_only": 1
   },
   {

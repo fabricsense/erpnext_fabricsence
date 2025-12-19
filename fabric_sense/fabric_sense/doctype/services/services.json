@@ -22,7 +22,7 @@
    "fieldname": "category",
    "fieldtype": "Link",
    "label": "Category",
-   "options": "Category"
+   "options": "Item Group"
   },
   {
    "fieldname": "contractors",
@@ -40,7 +40,7 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2025-12-10 23:16:22.586767",
+ "modified": "2025-12-19 10:20:46.125181",
  "modified_by": "Administrator",
  "module": "Fabric Sense",
  "name": "Services",

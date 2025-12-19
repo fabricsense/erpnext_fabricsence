@@ -27,7 +27,7 @@ const toggle_order_type_fields = (frm) => {
 			"stitching_pattern",
 			"stitching_charge",
 			"fitting_type",
-			"fitting_charge"
+			"fitting_charge",
 		];
 		service_charge_fields.forEach((fieldname) => {
 			grid.toggle_display(fieldname, is_fitting);
@@ -36,8 +36,10 @@ const toggle_order_type_fields = (frm) => {
 		// Pattern field: show only when order_type is "Fitting" AND product_type is Window Curtains or Roman Blinds
 		if (frm.doc.measurement_details && frm.doc.measurement_details.length > 0) {
 			frm.doc.measurement_details.forEach((row) => {
-				const show_pattern = is_fitting && 
-					(row.product_type === "Window Curtains" || row.product_type === "Roman Blinds");
+				const show_pattern =
+					is_fitting &&
+					(row.product_type === "Window Curtains" ||
+						row.product_type === "Roman Blinds");
 				grid.toggle_display("pattern", show_pattern, row.name);
 			});
 		} else {
@@ -55,9 +57,13 @@ frappe.ui.form.on("Measurement Sheet", {
 		frm.refresh_field("measurement_details");
 		toggle_order_type_fields(frm);
 
-		// Ensure Project is filtered by the selected Customer on load
+		// Ensure Project is filtered by the selected Customer on load and excludes projects already assigned to other measurement sheets
 		frm.set_query("project", () => ({
-			filters: { customer: frm.doc.customer || undefined },
+			query: "fabric_sense.fabric_sense.doctype.measurement_sheet.measurement_sheet.get_available_projects",
+			filters: {
+				customer: frm.doc.customer || undefined,
+				current_measurement_sheet: frm.doc.name || undefined,
+			},
 		}));
 
 		// Auto-fill sales_person with logged-in user's name for new documents
@@ -92,7 +98,11 @@ frappe.ui.form.on("Measurement Sheet", {
 	// When Customer changes, clear Project and re-apply query filter
 	customer(frm) {
 		frm.set_query("project", () => ({
-			filters: { customer: frm.doc.customer || undefined },
+			query: "fabric_sense.fabric_sense.doctype.measurement_sheet.measurement_sheet.get_available_projects",
+			filters: {
+				customer: frm.doc.customer || undefined,
+				current_measurement_sheet: frm.doc.name || undefined,
+			},
 		}));
 		if (frm.doc.project) {
 			frm.set_value("project", null);
@@ -107,6 +117,8 @@ frappe.ui.form.on("Measurement Sheet", {
 		// Clear error highlight when field is filled
 		if (frm.doc.project) {
 			msHelper.clear_field_error(frm, "project");
+			// Automatically set Order Type to "Fitting" when project is selected
+			frm.set_value("order_type", "Fitting");
 		}
 	},
 
@@ -117,9 +129,13 @@ frappe.ui.form.on("Measurement Sheet", {
 		msHelper.clearStockCache?.();
 		toggle_order_type_fields(frm);
 
-		// Keep Project filtered by Customer on refresh as well
+		// Keep Project filtered by Customer on refresh as well and exclude projects already assigned to other measurement sheets
 		frm.set_query("project", () => ({
-			filters: { customer: frm.doc.customer || undefined },
+			query: "fabric_sense.fabric_sense.doctype.measurement_sheet.measurement_sheet.get_available_projects",
+			filters: {
+				customer: frm.doc.customer || undefined,
+				current_measurement_sheet: frm.doc.name || undefined,
+			},
 		}));
 
 		frm.refresh_field("measurement_details");
@@ -147,13 +163,175 @@ frappe.ui.form.on("Measurement Sheet", {
 		// Add "Create Sales Order" button when Measurement Sheet is Approved and saved
 		msHelper.create_sales_order_from_measurement_sheet(frm);
 
+		// Add comprehensive price monitoring system
+		if (!frm._price_monitoring_initialized) {
+			// 2. Periodic price checking every 5 seconds for zero-rate items
+			frm._price_check_interval = setInterval(() => {
+				if (
+					cur_frm &&
+					cur_frm.doctype === "Measurement Sheet" &&
+					cur_frm.doc.name === frm.doc.name
+				) {
+					frm._refresh_zero_rate_items();
+				}
+			}, 5000);
+
+			frm._price_monitoring_initialized = true;
+		}
+
+		// Define the refresh function
+		frm._refresh_zero_rate_items = function () {
+			const items_to_refresh = [];
+			(frm.doc.measurement_details || []).forEach((row) => {
+				if (row.fabric_selected && (!row.fabric_rate || row.fabric_rate === 0)) {
+					items_to_refresh.push({
+						row: row,
+						field: "fabric_selected",
+						rate_field: "fabric_rate",
+					});
+				}
+				if (row.lining && (!row.lining_rate || row.lining_rate === 0)) {
+					items_to_refresh.push({
+						row: row,
+						field: "lining",
+						rate_field: "lining_rate",
+					});
+				}
+				if (row.lead_rope && (!row.lead_rope_rate || row.lead_rope_rate === 0)) {
+					items_to_refresh.push({
+						row: row,
+						field: "lead_rope",
+						rate_field: "lead_rope_rate",
+					});
+				}
+				if (row.track_rod && (!row.track_rod_rate || row.track_rod_rate === 0)) {
+					items_to_refresh.push({
+						row: row,
+						field: "track_rod",
+						rate_field: "track_rod_rate",
+					});
+				}
+				if (row.selection && (!row.selection_rate || row.selection_rate === 0)) {
+					items_to_refresh.push({
+						row: row,
+						field: "selection",
+						rate_field: "selection_rate",
+					});
+				}
+				if (
+					row.stitching_pattern &&
+					(!row.stitching_charge || row.stitching_charge === 0)
+				) {
+					items_to_refresh.push({
+						row: row,
+						field: "stitching_pattern",
+						rate_field: "stitching_charge",
+					});
+				}
+				if (row.fitting_type && (!row.fitting_charge || row.fitting_charge === 0)) {
+					items_to_refresh.push({
+						row: row,
+						field: "fitting_type",
+						rate_field: "fitting_charge",
+					});
+				}
+			});
+
+			if (items_to_refresh.length > 0) {
+				console.log(
+					"Auto-refreshing prices for items with zero rates:",
+					items_to_refresh.length
+				);
+				items_to_refresh.forEach((item) => {
+					frm._force_refresh_item_price(item.row, item.field, item.rate_field);
+				});
+			}
+		};
+
+		// Force refresh function with whitelisted methods only
+		frm._force_refresh_item_price = function (row, field, rate_field) {
+			const item_code = row[field];
+			if (!item_code) return;
+
+			// Get customer from form for price list context
+			const customer = frm.doc.customer;
+
+			// Use the aggressive fetching function with customer context
+			frm._fetch_item_price_aggressive(item_code, customer, function (rate) {
+				let final_rate = rate || 0;
+
+				// Special handling for stitching pattern
+				if (rate_field === "stitching_charge" && final_rate > 0) {
+					if (row.product_type === "Window Curtains") {
+						final_rate = final_rate * (parseFloat(row.panels) || 0);
+					} else if (row.product_type === "Roman Blinds") {
+						final_rate = final_rate * (parseFloat(row.square_feet) || 0);
+					}
+				}
+
+				if (final_rate > 0) {
+					frappe.model.set_value(row.doctype, row.name, rate_field, final_rate);
+					msHelper.calculate_row_amounts(frm, row.doctype, row.name);
+					console.log(`Force updated ${field} rate to ${final_rate}`);
+				}
+			});
+		};
+
+		// Define aggressive price fetching function using our custom whitelisted server method
+		frm._fetch_item_price_aggressive = function (item_code, customer, callback) {
+			if (!item_code) {
+				callback(0);
+				return;
+			}
+
+			console.log(`Aggressive fetch starting for item: ${item_code}, customer: ${customer || 'None'}`);
+
+			// Use our custom server method that respects price list restrictions
+			frappe.call({
+				method: "fabric_sense.fabric_sense.doctype.measurement_sheet.measurement_sheet.get_fresh_item_price",
+				args: {
+					item_code: item_code,
+					customer: customer || null,
+				},
+				callback: function (r) {
+					if (r.message && r.message.price_list_rate > 0) {
+						const rate = r.message.price_list_rate;
+						console.log(
+							`Fresh server method found price for ${item_code}: ${rate} (source: ${r.message.source})`
+						);
+						callback(rate);
+					} else {
+						console.log(
+							`No price found for ${item_code} (source: ${
+								r.message ? r.message.source : "unknown"
+							})`
+						);
+						callback(0);
+					}
+				},
+				error: function (err) {
+					console.error(`Error fetching price for ${item_code}:`, err);
+					callback(0);
+				},
+			});
+		};
+
 		msHelper.calculate_totals(frm);
+	},
+
+	onload_post_render(frm) {
+		// Cleanup interval when form is closed
+		$(window).on("beforeunload", function () {
+			if (frm._price_check_interval) {
+				clearInterval(frm._price_check_interval);
+			}
+		});
 	},
 
 	measurement_method(frm) {
 		// Clear error highlight when field is filled
 		msHelper.clear_field_error(frm, "measurement_method");
-		
+
 		if (frm.doc.measurement_method === "Contractor Assigned") {
 			frm.set_df_property("assigned_contractor", "reqd", 1);
 			frm.set_df_property("expected_measurement_date", "reqd", 1);
@@ -248,23 +426,23 @@ frappe.ui.form.on("Measurement Sheet", {
 	before_save(frm) {
 		// Clear any previous error highlights
 		msHelper.clear_field_errors(frm);
-		
+
 		// Ensure order_type fields are properly toggled before validation
 		toggle_order_type_fields(frm);
-		
+
 		// Validate all mandatory fields
 		const errors = msHelper.validate_mandatory_fields(frm);
-		
+
 		if (errors.length > 0) {
 			// Highlight all error fields
 			msHelper.highlight_field_errors(frm, errors);
-			
+
 			// Scroll to first error
 			msHelper.scroll_to_first_error(frm, errors);
-			
+
 			// Show user-friendly error message
 			msHelper.show_validation_errors(frm, errors);
-			
+
 			// Prevent save by throwing validation error
 			// The error message is minimal since we've already shown detailed errors
 			throw new Error(__("Please fill in all required fields highlighted in red above."));
@@ -274,7 +452,7 @@ frappe.ui.form.on("Measurement Sheet", {
 	after_save(frm) {
 		// Clear any error highlights after successful save
 		msHelper.clear_field_errors(frm);
-		
+
 		// Refresh status field after save to ensure it displays the saved value
 		// Reload the document to get the actual saved status from database
 		frm.reload_doc();
@@ -306,7 +484,8 @@ frappe.ui.form.on("Measurement Detail", {
 		const grid = frm.fields_dict.measurement_details?.grid;
 		if (grid) {
 			const is_fitting = frm.doc.order_type === "Fitting";
-			const show_pattern = is_fitting && 
+			const show_pattern =
+				is_fitting &&
 				(row.product_type === "Window Curtains" || row.product_type === "Roman Blinds");
 			grid.toggle_display("pattern", show_pattern, row.name);
 		}
@@ -484,6 +663,14 @@ frappe.ui.form.on("Measurement Detail", {
 		msHelper.calculate_row_amounts(frm, cdt, cdn);
 	},
 
+	lining_qty(frm, cdt, cdn) {
+		msHelper.calculate_row_amounts(frm, cdt, cdn);
+	},
+
+	fabric_rate(frm, cdt, cdn) {
+		msHelper.calculate_row_amounts(frm, cdt, cdn);
+	},
+
 	async lining(frm, cdt, cdn) {
 		const row = locals[cdt][cdn];
 		const rate = row.lining ? await msHelper.fetch_item_rate(row.lining, null, frm) : 0;
@@ -505,7 +692,7 @@ frappe.ui.form.on("Measurement Detail", {
 			await frappe.model.set_value(cdt, cdn, {
 				lead_rope_rate: 0,
 				lead_rope_qty: 0,
-				lead_rope_amount: 0
+				lead_rope_amount: 0,
 			});
 		}
 		msHelper.calculate_row_amounts(frm, cdt, cdn);
@@ -530,7 +717,7 @@ frappe.ui.form.on("Measurement Detail", {
 				track_rod_rate: 0,
 				track_rod_qty: 0,
 				track_rod_amount: 0,
-				track_rod_type: ""  // Clear track_rod_type when track_rod is deselected
+				track_rod_type: "", // Clear track_rod_type when track_rod is deselected
 			});
 		}
 		msHelper.calculate_row_amounts(frm, cdt, cdn);
@@ -548,7 +735,16 @@ frappe.ui.form.on("Measurement Detail", {
 		msHelper.calculate_row_amounts(frm, cdt, cdn);
 	},
 
-	selection(frm, cdt, cdn) {
+	async selection(frm, cdt, cdn) {
+		const row = locals[cdt][cdn];
+		if (row.selection) {
+			// Fetch and display the rate for the selected hardware item
+			const rate = await msHelper.fetch_item_rate(row.selection, null, frm);
+			await frappe.model.set_value(cdt, cdn, "selection_rate", rate || 0);
+		} else {
+			// Clear the rate when selection is cleared
+			await frappe.model.set_value(cdt, cdn, "selection_rate", 0);
+		}
 		msHelper.calculate_row_amounts(frm, cdt, cdn);
 	},
 
@@ -585,11 +781,11 @@ frappe.ui.form.on("Measurement Detail", {
 	async stitching_pattern(frm, cdt, cdn) {
 		const row = locals[cdt][cdn];
 
-		// If this was auto-filled from the pattern field, don't process it again
+		// If this was auto-filled from the pattern field, reset the flag but still calculate
 		if (row._stitching_pattern_auto_filled) {
 			// Reset the flag
-			frappe.model.set_value(cdt, cdn, "_stitching_pattern_auto_filled", false);
-			return;
+			await frappe.model.set_value(cdt, cdn, "_stitching_pattern_auto_filled", false);
+			// Continue to calculate stitching charge (don't return early)
 		}
 
 		const rate = row.stitching_pattern

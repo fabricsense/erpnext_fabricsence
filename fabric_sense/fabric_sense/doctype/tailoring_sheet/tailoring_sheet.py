@@ -1,4 +1,5 @@
 import frappe  # type: ignore
+from frappe import _  # type: ignore
 from frappe.model.document import Document  # type: ignore
 
 
@@ -245,3 +246,159 @@ def get_remaining_quantities(tailoring_sheet):
         })
     
     return {"items": result_items}
+
+
+@frappe.whitelist()
+def create_multi_material_request(tailoring_sheet):
+    """
+    Create two Material Requests from Tailoring Sheet:
+    - Purchase type: for items with 'Is On Order Item' checked
+    - Material Issue type: for all other items
+    
+    Args:
+        tailoring_sheet (str): Tailoring Sheet name
+        
+    Returns:
+        dict: Contains purchase_mr and issue_mr names
+    """
+    try:
+        # Get the Tailoring Sheet document
+        ts_doc = frappe.get_doc("Tailoring Sheet", tailoring_sheet)
+        
+        # Get remaining quantities (already excludes service items)
+        remaining_data = get_remaining_quantities(tailoring_sheet)
+        
+        if not remaining_data or not remaining_data.get("items"):
+            return {
+                "purchase_mr": None,
+                "issue_mr": None
+            }
+        
+        # Separate items based on 'Is On Order Item' field
+        purchase_items = []
+        issue_items = []
+        
+        for item_data in remaining_data["items"]:
+            # Only include items with remaining quantity > 0
+            if item_data["remaining_qty"] <= 0:
+                continue
+            
+            item_code = item_data["item_code"]
+            
+            # Check if item has 'Is On Order Item' checked
+            is_on_order = frappe.db.get_value("Item", item_code, "custom_is_onorder_item")
+            
+            if is_on_order:
+                purchase_items.append(item_data)
+            else:
+                issue_items.append(item_data)
+        
+        result = {
+            "purchase_mr": None,
+            "issue_mr": None
+        }
+        
+        # Create Purchase Material Request if there are on-order items
+        if purchase_items:
+            purchase_mr = create_material_request_from_items(
+                ts_doc, 
+                purchase_items, 
+                "Purchase"
+            )
+            if purchase_mr:
+                result["purchase_mr"] = purchase_mr.name
+        
+        # Create Material Issue Request for other items
+        if issue_items:
+            issue_mr = create_material_request_from_items(
+                ts_doc, 
+                issue_items, 
+                "Material Issue"
+            )
+            if issue_mr:
+                result["issue_mr"] = issue_mr.name
+        
+        return result
+        
+    except Exception as e:
+        frappe.log_error(
+            f"Error creating multi material request for {tailoring_sheet}: {str(e)}\n{frappe.get_traceback()}",
+            "Multi Material Request Error"
+        )
+        frappe.throw(_("Error creating Material Requests: {0}").format(str(e)))
+
+
+def create_material_request_from_items(ts_doc, items, material_request_type):
+    """
+    Create a Material Request from given items.
+    
+    Args:
+        ts_doc (Document): Tailoring Sheet document
+        items (list): List of item dictionaries with item_code, remaining_qty, uom
+        material_request_type (str): "Purchase" or "Material Issue"
+        
+    Returns:
+        Document: Created Material Request document or None
+    """
+    if not items:
+        return None
+    
+    try:
+        # Get company from project or use default
+        company = None
+        if ts_doc.project:
+            company = frappe.db.get_value("Project", ts_doc.project, "company")
+        
+        if not company:
+            # Get default company
+            company = frappe.db.get_single_value("Global Defaults", "default_company")
+        
+        # Check if there are existing Material Requests for this Tailoring Sheet
+        existing_mrs = frappe.get_all(
+            "Material Request",
+            filters={
+                "custom_tailoring_sheet": ts_doc.name,
+                "docstatus": ["!=", 2]  # Exclude cancelled
+            },
+            fields=["name"]
+        )
+        
+        # Create Material Request
+        mr_doc = frappe.new_doc("Material Request")
+        mr_doc.material_request_type = material_request_type
+        mr_doc.transaction_date = frappe.utils.today()
+        mr_doc.schedule_date = frappe.utils.add_days(frappe.utils.today(), 7)
+        mr_doc.company = company
+        mr_doc.custom_tailoring_sheet = ts_doc.name
+        
+        # Set approval status: if no existing MRs, it's first request (Approved)
+        # If there are existing MRs, it's additional request (Pending)
+        if not existing_mrs:
+            mr_doc.custom_manager_approval_status = "Approved"
+        else:
+            mr_doc.custom_manager_approval_status = "Pending"
+            mr_doc.custom_is_additional = 1
+        
+        # Add items to Material Request
+        for item_data in items:
+            if item_data.get("remaining_qty", 0) > 0:
+                mr_doc.append("items", {
+                    "item_code": item_data["item_code"],
+                    "qty": item_data["remaining_qty"],
+                    "uom": item_data.get("uom", "Nos"),
+                    "schedule_date": frappe.utils.add_days(frappe.utils.today(), 7)
+                })
+        
+        mr_doc.insert()
+        mr_doc.submit()
+        
+        frappe.db.commit()
+        
+        return mr_doc
+        
+    except Exception as e:
+        frappe.log_error(
+            f"Error creating {material_request_type} Material Request: {str(e)}\n{frappe.get_traceback()}",
+            f"Create {material_request_type} MR Error"
+        )
+        return None

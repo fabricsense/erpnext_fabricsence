@@ -19,18 +19,88 @@ fabric_sense.tailoring_sheet.setup_tailoring_sheet_form = function (frm) {
 	const pageActions = frm.page.page_actions;
 	pageActions.find(".btn-primary").each(function () {
 		const btnText = $(this).text().trim();
-		if (btnText === "Create Material Request") {
+		if (
+			btnText === "Create Material Request" ||
+			btnText === "Create multiple material request" ||
+			btnText === "Create additional material request"
+		) {
 			$(this).remove();
 		}
 	});
 
-	// Add "Create Material Request" button when status is "Completed"
-	if (frm.doc.status === "Completed" && !frm.is_new()) {
-		frm.add_custom_button(__("Create Material Request"), function () {
-			fabric_sense.tailoring_sheet.create_material_request(frm);
-		})
-			.addClass("btn-primary")
-			.prependTo(frm.page.page_actions);
+	// Add material request button when status is "Completed"
+	// Only show button if document is saved and status is "Completed"
+	if (frm.doc.status === "Completed" && !frm.is_new() && frm.doc.name) {
+		// First check remaining quantities to determine button text
+		frappe.call({
+			method: "fabric_sense.fabric_sense.doctype.tailoring_sheet.tailoring_sheet.get_remaining_quantities",
+			args: {
+				tailoring_sheet: frm.doc.name,
+			},
+			callback: function (r) {
+				let button_text = __("Create multiple material request");
+				let has_remaining_items = false;
+
+				if (r.message && r.message.items) {
+					// Check if there are any items with remaining quantity > 0
+					has_remaining_items = r.message.items.some((item) => item.remaining_qty > 0);
+				}
+
+				// If no remaining items, show "Create additional material request"
+				if (!has_remaining_items) {
+					button_text = __("Create additional material request");
+				}
+
+				frm.add_custom_button(button_text, function () {
+					// If this is an additional material request (no remaining items),
+					// redirect to form instead of auto-creating
+					if (!has_remaining_items) {
+						// Create new Material Request and navigate to form
+						frappe.model.with_doctype("Material Request", function () {
+							let mr = frappe.model.get_new_doc("Material Request");
+							mr.material_request_type = "Purchase";
+							mr.custom_tailoring_sheet = frm.doc.name;
+							// mr.transaction_date = frappe.datetime.get_today();
+							mr.custom_manager_approval_status = "Pending";
+							mr.custom_is_additional = 1;
+
+							// Navigate to the new Material Request form
+							frappe.set_route("Form", "Material Request", mr.name);
+						});
+					} else {
+						// For regular multiple material requests, use existing auto-creation logic
+						frappe.call({
+							method: "fabric_sense.fabric_sense.doctype.tailoring_sheet.tailoring_sheet.create_multi_material_request",
+							args: {
+								tailoring_sheet: frm.doc.name,
+							},
+							freeze: true,
+							freeze_message: __("Creating Material Requests..."),
+							callback: function (r) {
+								if (r.message) {
+									if (r.message.purchase_mr || r.message.issue_mr) {
+										// Navigate to Material Request list with filter for this tailoring sheet
+										frappe.set_route("List", "Material Request", {
+											"custom_tailoring_sheet": frm.doc.name
+										});
+									} else {
+										frappe.msgprint({
+											title: __("No Items"),
+											indicator: "orange",
+											message: __(
+												"No items found to create Material Requests."
+											),
+										});
+									}
+								}
+							},
+						});
+					}
+				})
+					.addClass("btn-primary")
+					.prependTo(frm.page.page_actions);
+			},
+		});
 	}
 };
 

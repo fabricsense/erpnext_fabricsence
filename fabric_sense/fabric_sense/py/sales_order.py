@@ -26,7 +26,20 @@ def validate_billing_multiple(doc, method=None):
 
         # If Billing Multiple exists and is greater than 0, validate quantity
         if billing_multiple and flt(billing_multiple) > 0:
-            if flt(item.qty) % flt(billing_multiple) != 0:
+            qty = flt(item.qty)
+            multiple = flt(billing_multiple)
+
+            # Use tolerance-based check to handle floating-point precision issues
+            # e.g., 9.0 % 0.05 can give 0.04999... instead of 0 due to float representation
+            remainder = qty % multiple
+            tolerance = 0.0001
+
+            # Check if remainder is close to 0 or close to the multiple itself
+            is_valid_multiple = (remainder < tolerance) or (
+                abs(remainder - multiple) < tolerance
+            )
+
+            if not is_valid_multiple:
                 frappe.throw(
                     _(
                         "Quantity for item {0} must be a multiple of {1} (Billing Multiple). Current quantity: {2}"
@@ -88,41 +101,51 @@ def send_customer_approval_notification(doc, method=None):
         # Check if manager_approval_status field exists and is set to "Approved"
         if not hasattr(doc, "manager_approval_status"):
             return
-        
+
         # Only send notification if current status is "Approved"
         if doc.manager_approval_status != "Approved":
             return
-        
+
         # Check if this is a new document (initial creation)
         if doc.is_new():
             return
-        
+
         # Check if the status has actually changed in this update
         # This prevents duplicate emails when the document is saved multiple times while already approved
-        if not doc.has_value_changed('manager_approval_status'):
+        if not doc.has_value_changed("manager_approval_status"):
             # Status hasn't changed, don't send email
-            frappe.logger().debug(f"Sales Order {doc.name}: manager_approval_status has not changed, skipping email")
+            frappe.logger().debug(
+                f"Sales Order {doc.name}: manager_approval_status has not changed, skipping email"
+            )
             return
-        
+
         # Get the old value to check what it was before this update
         # Try _doc_before_save first, then fall back to database value
         old_value = None
-        if hasattr(doc, '_doc_before_save') and doc._doc_before_save:
-            old_value = doc._doc_before_save.get('manager_approval_status')
+        if hasattr(doc, "_doc_before_save") and doc._doc_before_save:
+            old_value = doc._doc_before_save.get("manager_approval_status")
         else:
             # Fallback: get value from database
-            old_value = frappe.db.get_value('Sales Order', doc.name, 'manager_approval_status')
-        
-        frappe.logger().debug(f"Sales Order {doc.name}: Old value = {old_value}, New value = {doc.manager_approval_status}")
-        
+            old_value = frappe.db.get_value(
+                "Sales Order", doc.name, "manager_approval_status"
+            )
+
+        frappe.logger().debug(
+            f"Sales Order {doc.name}: Old value = {old_value}, New value = {doc.manager_approval_status}"
+        )
+
         # Only send email if status changed FROM something else TO "Approved"
         # If it was already "Approved", don't send again
         if old_value == "Approved":
-            frappe.logger().debug(f"Sales Order {doc.name}: Status was already Approved, skipping email")
+            frappe.logger().debug(
+                f"Sales Order {doc.name}: Status was already Approved, skipping email"
+            )
             return
-        
-        frappe.logger().info(f"Sales Order {doc.name}: Status changed from {old_value} to Approved, sending email")
-        
+
+        frappe.logger().info(
+            f"Sales Order {doc.name}: Status changed from {old_value} to Approved, sending email"
+        )
+
         # Get customer email
         customer_email = get_customer_email(doc.customer, doc.get("contact_email"))
 
@@ -254,9 +277,6 @@ def send_approval_email(doc, customer_email):
         message = f"""
         <div style="font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto;">
             <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 30px; text-align: center; border-radius: 8px 8px 0 0;">
-                <div style="background-color: white; width: 80px; height: 80px; border-radius: 50%; margin: 0 auto 16px; padding-top: 16px;">
-                    <span style="font-size: 40px;">✅</span>
-                </div>
                 <h1 style="color: white; margin: 0; font-size: 28px;">Sales Order Approved!</h1>
                 <p style="color: white; margin: 10px 0 0; font-size: 16px;">Your order has been confirmed</p>
             </div>
@@ -557,6 +577,7 @@ def make_material_request(source_name, target_doc=None):
     return doclist
 
 
+@frappe.whitelist()
 def check_remaining_items(sales_order_name):
     """
     Check if there are remaining items in the Sales Order that need Material Request.
@@ -595,7 +616,7 @@ def check_remaining_items(sales_order_name):
         # Skip service items
         if is_service_item(item.item_code):
             continue
-            
+
         remaining_qty = item.ordered_qty - item.requested_qty
         if remaining_qty > 0:
             return True
@@ -626,13 +647,13 @@ def send_order_ready_notification(sales_order):
             )
             frappe.log_error(
                 f"No email found for customer {doc.customer} in Sales Order: {doc.name}",
-                "Order Ready Notification - No Email"
+                "Order Ready Notification - No Email",
             )
             return False
-        
+
         # Send email
         email_sent = send_delivery_ready_email(doc, customer_email)
-        
+
         if email_sent:
             frappe.logger().info(
                 f"Order ready notification sent successfully for: {doc.name} to {customer_email}"
@@ -643,16 +664,16 @@ def send_order_ready_notification(sales_order):
                 f"Failed to send order ready notification for: {doc.name}"
             )
             return False
-        
+
     except Exception as e:
         frappe.log_error(
             f"Error sending order ready notification: {str(e)}\n{frappe.get_traceback()}",
-            "Order Ready Notification Error"
+            "Order Ready Notification Error",
         )
         frappe.msgprint(
             _("Failed to send notification. Check error log for details."),
             indicator="red",
-            alert=True
+            alert=True,
         )
         return False
 
@@ -701,11 +722,11 @@ def get_customer_email(customer, contact_email=None):
 def send_delivery_ready_email(doc, customer_email):
     """
     Send delivery ready notification email.
-    
+
     Args:
         doc (Document): Sales Order document
         customer_email (str): Customer email address
-        
+
     Returns:
         bool: True if email sent successfully, False otherwise
     """
@@ -810,7 +831,7 @@ def send_delivery_ready_email(doc, customer_email):
             message=message,
             reference_doctype="Sales Order",
             reference_name=doc.name,
-            delayed=False
+            delayed=False,
         )
 
         frappe.msgprint(
@@ -818,9 +839,9 @@ def send_delivery_ready_email(doc, customer_email):
             indicator="green",
             alert=True,
         )
-        
+
         return True
-        
+
     except Exception as e:
         frappe.log_error(
             f"Error sending delivery ready email for Sales Order {doc.name}: {str(e)}\n{frappe.get_traceback()}",
@@ -829,7 +850,7 @@ def send_delivery_ready_email(doc, customer_email):
         frappe.msgprint(
             _("Failed to send delivery notification. Check error log for details."),
             indicator="red",
-            alert=True
+            alert=True,
         )
         return False
 
@@ -840,68 +861,63 @@ def create_multi_material_request(sales_order):
     Create two Material Requests from Sales Order:
     - Purchase type: for items with 'Is On Order Item' checked
     - Material Issue type: for all other items
-    
+
     Args:
         sales_order (str): Sales Order name
-        
+
     Returns:
         dict: Contains purchase_mr and issue_mr names
     """
     try:
         # Get the Sales Order document
         so_doc = frappe.get_doc("Sales Order", sales_order)
-        
+
         if so_doc.docstatus != 1:
             frappe.throw(_("Sales Order must be submitted to create Material Requests"))
-        
+
         # Separate items based on 'Is On Order Item' field
         purchase_items = []
         issue_items = []
-        
+
         for item in so_doc.items:
             # Skip service items
             if is_service_item(item.item_code):
                 continue
-            
+
             # Check if item has 'Is On Order Item' checked
-            is_on_order = frappe.db.get_value("Item", item.item_code, "custom_is_onorder_item")
-            
+            is_on_order = frappe.db.get_value(
+                "Item", item.item_code, "custom_is_onorder_item"
+            )
+
             if is_on_order:
                 purchase_items.append(item)
             else:
                 issue_items.append(item)
-        
-        result = {
-            "purchase_mr": None,
-            "issue_mr": None
-        }
-        
+
+        result = {"purchase_mr": None, "issue_mr": None}
+
         # Create Purchase Material Request if there are on-order items
         if purchase_items:
             purchase_mr = create_material_request_from_items(
-                so_doc, 
-                purchase_items, 
-                "Purchase"
+                so_doc, purchase_items, "Purchase"
             )
             if purchase_mr:
                 result["purchase_mr"] = purchase_mr.name
-        
+
         # Create Material Issue Request for other items
         if issue_items:
             issue_mr = create_material_request_from_items(
-                so_doc, 
-                issue_items, 
-                "Material Issue"
+                so_doc, issue_items, "Material Issue"
             )
             if issue_mr:
                 result["issue_mr"] = issue_mr.name
-        
+
         return result
-        
+
     except Exception as e:
         frappe.log_error(
             f"Error creating multi material request for {sales_order}: {str(e)}\n{frappe.get_traceback()}",
-            "Multi Material Request Error"
+            "Multi Material Request Error",
         )
         frappe.throw(_("Error creating Material Requests: {0}").format(str(e)))
 
@@ -909,18 +925,18 @@ def create_multi_material_request(sales_order):
 def create_material_request_from_items(so_doc, items, material_request_type):
     """
     Create a Material Request from given items.
-    
+
     Args:
         so_doc (Document): Sales Order document
         items (list): List of Sales Order Item rows
         material_request_type (str): "Purchase" or "Material Issue"
-        
+
     Returns:
         Document: Created Material Request document or None
     """
     if not items:
         return None
-    
+
     try:
         # Create Material Request
         mr_doc = frappe.new_doc("Material Request")
@@ -929,7 +945,7 @@ def create_material_request_from_items(so_doc, items, material_request_type):
         mr_doc.schedule_date = so_doc.delivery_date or frappe.utils.today()
         mr_doc.company = so_doc.company
         mr_doc.custom_sales_order = so_doc.name
-        
+
         # Set approval status based on whether it's first or additional request
         has_remaining_items = check_remaining_items(so_doc.name)
         if has_remaining_items:
@@ -937,29 +953,32 @@ def create_material_request_from_items(so_doc, items, material_request_type):
         else:
             mr_doc.custom_manager_approval_status = "Pending"
             mr_doc.custom_is_additional = 1
-        
+
         # Add items to Material Request
         for item in items:
-            mr_doc.append("items", {
-                "item_code": item.item_code,
-                "qty": item.qty,
-                "uom": item.stock_uom or item.uom,
-                "schedule_date": so_doc.delivery_date or frappe.utils.today(),
-                "warehouse": item.warehouse,
-                "sales_order": so_doc.name,
-                "sales_order_item": item.name
-            })
-        
+            mr_doc.append(
+                "items",
+                {
+                    "item_code": item.item_code,
+                    "qty": item.qty,
+                    "uom": item.stock_uom or item.uom,
+                    "schedule_date": so_doc.delivery_date or frappe.utils.today(),
+                    "warehouse": item.warehouse,
+                    "sales_order": so_doc.name,
+                    "sales_order_item": item.name,
+                },
+            )
+
         mr_doc.insert()
         mr_doc.submit()
-        
+
         frappe.db.commit()
-        
+
         return mr_doc
-        
+
     except Exception as e:
         frappe.log_error(
             f"Error creating {material_request_type} Material Request: {str(e)}\n{frappe.get_traceback()}",
-            f"Create {material_request_type} MR Error"
+            f"Create {material_request_type} MR Error",
         )
         return None

@@ -145,30 +145,21 @@ frappe.ui.form.on("Sales Order", {
 
 		// Override the default Material Request button
 		if (frm.doc.docstatus === 1) {
-			// Remove the default Material Request button if it exists
-			frm.remove_custom_button("Material Request", "Create");
+			// Use setTimeout to ensure this runs after ERPNext's default buttons are added
+			setTimeout(() => {
+				// Remove all Material Request buttons (both default and custom)
+				frm.remove_custom_button("Material Request", "Create");
+				frm.remove_custom_button("Material Request");
+				frm.remove_custom_button("Additional Material Request", "Create");
+				frm.remove_custom_button("Additional Material Request");
 
-			// Add our custom Material Request button
-			frm.add_custom_button(
-				__("Material Request"),
-				function () {
-					// Call the server method to get the mapped document data
-					frappe.call({
-						method: "fabric_sense.fabric_sense.py.sales_order.make_material_request",
-						args: {
-							source_name: frm.doc.name,
-						},
-						callback: function (r) {
-							if (r.message) {
-								// Create a new Material Request form with the mapped data
-								var doc = frappe.model.sync(r.message);
-								frappe.set_route("Form", doc[0].doctype, doc[0].name);
-							}
-						},
-					});
-				},
-				__("Create")
-			);
+				// Also remove any existing Multi Material Request buttons
+				frm.remove_custom_button("Multi Material Request", "Create");
+				frm.remove_custom_button("Multi Material Request");
+
+				// Check if remaining items exist and show appropriate button
+				check_remaining_items_and_show_button(frm);
+			}, 100);
 		}
 
 		// Hide "Update Items" button if manager approval status is "Approved"
@@ -186,7 +177,10 @@ frappe.ui.form.on("Sales Order", {
 		}
 
 		// Check if status is "To Deliver" or "To Deliver and Bill"
-		if ((frm.doc.status === "To Deliver" || frm.doc.status === "To Deliver and Bill") && frm.doc.docstatus === 1) {
+		if (
+			(frm.doc.status === "To Deliver" || frm.doc.status === "To Deliver and Bill") &&
+			frm.doc.docstatus === 1
+		) {
 			frm.add_custom_button(__("Send Order Ready Notification"), function () {
 				// Call server-side Python function
 				frappe.call({
@@ -205,36 +199,6 @@ frappe.ui.form.on("Sales Order", {
 					},
 				});
 			}).addClass("btn-primary");
-
-			// Add Multi Material Request button under Create dropdown
-			frm.add_custom_button(
-				__("Multi Material Request"),
-				function () {
-					frappe.call({
-						method: "fabric_sense.fabric_sense.py.sales_order.create_multi_material_request",
-						args: {
-							sales_order: frm.doc.name,
-						},
-						freeze: true,
-						freeze_message: __("Creating Material Requests..."),
-						callback: function (r) {
-							if (r.message) {
-								if (r.message.purchase_mr || r.message.issue_mr) {
-									// Navigate to Material Request list
-									frappe.set_route("List", "Material Request");
-								} else {
-									frappe.msgprint({
-										title: __("No Items"),
-										indicator: "orange",
-										message: __("No items found to create Material Requests."),
-									});
-								}
-							}
-						},
-					});
-				},
-				__("Create")
-			);
 		}
 	},
 
@@ -294,6 +258,91 @@ frappe.ui.form.on("Sales Order Item", {
 		}
 	},
 });
+
+function check_remaining_items_and_show_button(frm) {
+	/**
+	 * Check if remaining items exist for Material Request creation
+	 * and show appropriate button (Material Request or Multi Material Request)
+	 */
+
+	// First, ensure all Material Request buttons are removed
+	frm.remove_custom_button("Material Request", "Create");
+	frm.remove_custom_button("Material Request");
+	frm.remove_custom_button("Additional Material Request", "Create");
+	frm.remove_custom_button("Additional Material Request");
+	frm.remove_custom_button("Multi Material Request", "Create");
+	frm.remove_custom_button("Multi Material Request");
+
+	frappe.call({
+		method: "fabric_sense.fabric_sense.py.sales_order.check_remaining_items",
+		args: {
+			sales_order_name: frm.doc.name,
+		},
+		callback: function (r) {
+			if (r.message !== undefined) {
+				const has_remaining_items = r.message;
+
+				if (has_remaining_items) {
+					// Show Multi Material Request button if remaining items exist
+					frm.add_custom_button(
+						__("Multi Material Request"),
+						function () {
+							frappe.call({
+								method: "fabric_sense.fabric_sense.py.sales_order.create_multi_material_request",
+								args: {
+									sales_order: frm.doc.name,
+								},
+								freeze: true,
+								freeze_message: __("Creating Material Requests..."),
+								callback: function (r) {
+									if (r.message) {
+										if (r.message.purchase_mr || r.message.issue_mr) {
+											// Navigate to Material Request list
+											frappe.set_route("List", "Material Request", {
+												custom_sales_order: frm.doc.name,
+											});
+										} else {
+											frappe.msgprint({
+												title: __("No Items"),
+												indicator: "orange",
+												message: __(
+													"No items found to create Material Requests."
+												),
+											});
+										}
+									}
+								},
+							});
+						},
+						__("Create")
+					);
+				} else {
+					// Show regular Material Request button if no remaining items
+					frm.add_custom_button(
+						__("Additional Material Request"),
+						function () {
+							// Call the server method to get the mapped document data
+							frappe.call({
+								method: "fabric_sense.fabric_sense.py.sales_order.make_material_request",
+								args: {
+									source_name: frm.doc.name,
+								},
+								callback: function (r) {
+									if (r.message) {
+										// Create a new Material Request form with the mapped data
+										var doc = frappe.model.sync(r.message);
+										frappe.set_route("Form", doc[0].doctype, doc[0].name);
+									}
+								},
+							});
+						},
+						__("Create")
+					);
+				}
+			}
+		},
+	});
+}
 
 function add_measurement_sheet_connection(frm) {
 	// Multiple attempts to find the connections area

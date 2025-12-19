@@ -28,4 +28,4 @@ This README would normally document whatever steps are necessary to get your app
 * Repo owner or admin
 * Other community or team contact
 * Test for trigger.
-* Test for ci/cd for qa
+* Test for ci/cd for dev
