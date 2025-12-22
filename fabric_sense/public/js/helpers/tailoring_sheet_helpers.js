@@ -22,11 +22,47 @@ fabric_sense.tailoring_sheet.setup_tailoring_sheet_form = function (frm) {
 		if (
 			btnText === "Create Material Request" ||
 			btnText === "Create multiple material request" ||
-			btnText === "Create additional material request"
+			btnText === "Create additional material request" ||
+			btnText === "Submit"
 		) {
 			$(this).remove();
 		}
 	});
+	if (frm.doc.status === "Draft" && !frm.is_new()) {
+		// Add Approve button
+		frm.add_custom_button(__("Submit"), function () {
+			frappe.confirm(
+				__("Are you sure you want to submit this record?"),
+				function () {
+					// On confirm
+					frappe.call({
+							method: "frappe.client.set_value",
+							args: {
+								doctype: "Tailoring Sheet",
+								name: frm.doc.name,
+								fieldname: "status",
+								value: "Completed",
+							},
+							callback: function (response) {
+								if (!response.exc) {
+									frappe.msgprint({
+										title: __("Success"),
+										indicator: "green",
+										message: __("Tailoring Sheet has been submitted"),
+									});
+									frm.reload_doc();
+								}
+							},
+						});
+				},
+				function () {
+					// On cancel - do nothing
+				}
+			);
+		})
+			.addClass("btn-primary")
+			.prependTo(frm.page.page_actions);
+	}
 
 	// Add material request button when status is "Completed"
 	// Only show button if document is saved and status is "Completed"
@@ -81,7 +117,7 @@ fabric_sense.tailoring_sheet.setup_tailoring_sheet_form = function (frm) {
 									if (r.message.purchase_mr || r.message.issue_mr) {
 										// Navigate to Material Request list with filter for this tailoring sheet
 										frappe.set_route("List", "Material Request", {
-											"custom_tailoring_sheet": frm.doc.name
+											custom_tailoring_sheet: frm.doc.name,
 										});
 									} else {
 										frappe.msgprint({
