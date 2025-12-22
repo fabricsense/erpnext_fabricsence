@@ -11,6 +11,9 @@ frappe.ui.form.on("Item", {
 		
 		// Update catalogue options based on selected brand (preserve existing value on refresh)
 		update_catalogue_options(frm, true);
+		
+		// Set GST Rate field mandatory based on HSN/SAC field mandatory status
+		update_gst_rate_mandatory(frm);
 	},
 
 	custom_vendor_code_selection: function (frm) {
@@ -85,12 +88,9 @@ frappe.ui.form.on("Item", {
 	},
 
 	gst_hsn_code: function (frm) {
-		// Auto-fill custom_hsn_code and custom_gst_rate when HSN/SAC is selected
+		// Auto-fill custom_gst_rate when HSN/SAC is selected
 		if (frm.doc.gst_hsn_code) {
 			console.log("HSN/SAC selected:", frm.doc.gst_hsn_code);
-
-			// Set the custom_hsn_code field with the selected HSN code
-			frm.set_value("custom_hsn_code", frm.doc.gst_hsn_code);
 
 			// Fetch GST HSN Code to get the linked Item Tax Template
 			frappe.call({
@@ -120,9 +120,16 @@ frappe.ui.form.on("Item", {
 			});
 		} else {
 			// Clear the fields if HSN code is cleared
-			frm.set_value("custom_hsn_code", null);
 			frm.set_value("custom_gst_rate", null);
 		}
+		
+		// Update GST Rate mandatory status when HSN/SAC changes
+		update_gst_rate_mandatory(frm);
+	},
+
+	is_sales_item: function (frm) {
+		// Update GST Rate mandatory status when is_sales_item changes
+		update_gst_rate_mandatory(frm);
 	},
 });
 
@@ -352,4 +359,33 @@ function toggle_brand_field_visibility(frm) {
 		frm.refresh_field("custom_brands");
 		frm.refresh_field("custom_catalogue");
 	}
+}
+
+function update_gst_rate_mandatory(frm) {
+	// Set GST Rate field mandatory based on HSN/SAC field mandatory status
+	// HSN/SAC is mandatory when: gst_settings.validate_hsn_code && doc.is_sales_item
+	
+	// Get GST Settings to check if HSN validation is enabled
+	frappe.call({
+		method: "frappe.client.get",
+		args: {
+			doctype: "GST Settings",
+			name: "GST Settings"
+		},
+		callback: function (r) {
+			if (r.message) {
+				let gst_settings = r.message;
+				let hsn_mandatory = gst_settings.validate_hsn_code && frm.doc.is_sales_item;
+				
+				console.log("GST Settings validate_hsn_code:", gst_settings.validate_hsn_code);
+				console.log("Item is_sales_item:", frm.doc.is_sales_item);
+				console.log("HSN/SAC mandatory:", hsn_mandatory);
+				console.log("Setting GST Rate mandatory:", hsn_mandatory);
+				
+				// Set GST Rate field mandatory based on HSN/SAC mandatory status
+				frm.set_df_property("custom_gst_rate", "reqd", hsn_mandatory ? 1 : 0);
+				frm.refresh_field("custom_gst_rate");
+			}
+		}
+	});
 }

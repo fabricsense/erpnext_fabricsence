@@ -16,6 +16,7 @@ class Pattern(Document):
         item.item_name = self.pattern_name
         item.item_group = self.item_group
         item.stock_uom = self.default_unit_of_measure
+        item.gst_hsn_code = self.hsnsac
         item.custom_base_rate = 0.00
         item.is_stock_item = 0
         # item.include_item_in_manufacturing = 0
