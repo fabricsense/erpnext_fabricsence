@@ -375,9 +375,9 @@ def create_material_request_from_items(ts_doc, items, material_request_type):
         # If there are existing MRs, it's additional request (Pending)
         if not existing_mrs:
             mr_doc.custom_manager_approval_status = "Approved"
-        else:
-            mr_doc.custom_manager_approval_status = "Pending"
-            mr_doc.custom_is_additional = 1
+        # else:
+        #     mr_doc.custom_manager_approval_status = "Pending"
+        #     mr_doc.custom_is_additional = 1
         
         # Add items to Material Request
         for item_data in items:

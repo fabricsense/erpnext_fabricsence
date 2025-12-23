@@ -1,4 +1,4 @@
-import frappe # type: ignore
+import frappe  # type: ignore
 
 
 def send_customer_delivery_notification(doc, method=None):
@@ -335,7 +335,7 @@ def adjust_stock_ledger_entries_for_delivery_note(doc, method=None):
     """
     Adjust stock ledger entries during Delivery Note submission to exclude quantities
     already updated through Stock Entry (Material Issue).
-    
+
     This function doesn't modify the Delivery Note document but intercepts the stock
     update process to prevent duplicate stock deductions.
 
@@ -348,50 +348,80 @@ def adjust_stock_ledger_entries_for_delivery_note(doc, method=None):
     """
     try:
         # Store original make_sl_entries method if not already stored
-        if not hasattr(frappe.local, 'original_make_sl_entries'):
+        if not hasattr(frappe.local, "original_make_sl_entries"):
             from erpnext.stock.stock_ledger import make_sl_entries
+
             frappe.local.original_make_sl_entries = make_sl_entries
-        
+
         # Get issued quantities for this delivery note
         issued_quantities = get_issued_quantities_for_delivery_note(doc)
-        
+
         if issued_quantities:
             # Monkey patch the make_sl_entries function temporarily
-            def adjusted_make_sl_entries(sl_entries, allow_negative_stock=None, via_landed_cost_voucher=False):
-                # Filter and adjust stock ledger entries
+            def adjusted_make_sl_entries(
+                sl_entries, allow_negative_stock=None, via_landed_cost_voucher=False
+            ):
+                # Check if any entry is from a Delivery Note - if not, use original function
+                has_delivery_note_entries = any(
+                    entry.get("voucher_type") == "Delivery Note" for entry in sl_entries
+                )
+
+                # If no Delivery Note entries, pass through to original function
+                if not has_delivery_note_entries:
+                    if hasattr(frappe.local, "original_make_sl_entries"):
+                        return frappe.local.original_make_sl_entries(
+                            sl_entries, allow_negative_stock, via_landed_cost_voucher
+                        )
+                    else:
+                        # Fallback to importing and calling directly
+                        from erpnext.stock.stock_ledger import (
+                            make_sl_entries as original_make_sl_entries,
+                        )
+
+                        return original_make_sl_entries(
+                            sl_entries, allow_negative_stock, via_landed_cost_voucher
+                        )
+
+                # Filter and adjust stock ledger entries for Delivery Notes
                 adjusted_entries = []
                 excluded_items = []
-                
+
                 for entry in sl_entries:
                     # Check if this entry is from our delivery note
-                    if (entry.get('voucher_type') == 'Delivery Note' and 
-                        entry.get('voucher_no') == doc.name):
-                        
-                        item_code = entry.get('item_code')
-                        original_qty = abs(float(entry.get('actual_qty', 0)))
+                    if (
+                        entry.get("voucher_type") == "Delivery Note"
+                        and entry.get("voucher_no") == doc.name
+                    ):
+
+                        item_code = entry.get("item_code")
+                        original_qty = abs(float(entry.get("actual_qty", 0)))
                         issued_qty = issued_quantities.get(item_code, 0)
-                        
+
                         if issued_qty > 0:
                             # Calculate remaining quantity to update
                             remaining_qty = max(0, original_qty - issued_qty)
-                            
+
                             if remaining_qty > 0:
                                 # Update the entry with remaining quantity
-                                entry['actual_qty'] = -remaining_qty  # Negative for outgoing
+                                entry["actual_qty"] = (
+                                    -remaining_qty
+                                )  # Negative for outgoing
                                 adjusted_entries.append(entry)
-                                
+
                                 frappe.logger().info(
                                     f"Adjusted stock entry for {item_code}: "
                                     f"Original={original_qty}, Issued={issued_qty}, Remaining={remaining_qty}"
                                 )
                             else:
                                 # Exclude this item completely
-                                excluded_items.append({
-                                    'item_code': item_code,
-                                    'original_qty': original_qty,
-                                    'issued_qty': issued_qty
-                                })
-                                
+                                excluded_items.append(
+                                    {
+                                        "item_code": item_code,
+                                        "original_qty": original_qty,
+                                        "issued_qty": issued_qty,
+                                    }
+                                )
+
                                 frappe.logger().info(
                                     f"Excluded stock entry for {item_code}: "
                                     f"Fully issued via Stock Entry (Original={original_qty}, Issued={issued_qty})"
@@ -402,20 +432,22 @@ def adjust_stock_ledger_entries_for_delivery_note(doc, method=None):
                     else:
                         # Not from our delivery note, include as is
                         adjusted_entries.append(entry)
-                
+
                 # Show notification if any adjustments were made
                 if excluded_items or len(adjusted_entries) != len(sl_entries):
-                    show_stock_adjustment_notification(excluded_items, doc.name)
-                
+                    # show_stock_adjustment_notification(excluded_items, doc.name)
+                    print("excluded_items", excluded_items)
+
                 # Call original function with adjusted entries
                 return frappe.local.original_make_sl_entries(
                     adjusted_entries, allow_negative_stock, via_landed_cost_voucher
                 )
-            
+
             # Temporarily replace the function
             import erpnext.stock.stock_ledger
+
             erpnext.stock.stock_ledger.make_sl_entries = adjusted_make_sl_entries
-            
+
             # Store reference to restore later
             frappe.local.temp_adjusted_make_sl_entries = adjusted_make_sl_entries
 
@@ -431,70 +463,73 @@ def restore_original_stock_ledger_function(doc, method=None):
     Restore the original make_sl_entries function after Delivery Note processing.
     """
     try:
-        if hasattr(frappe.local, 'original_make_sl_entries'):
+        if hasattr(frappe.local, "original_make_sl_entries"):
             import erpnext.stock.stock_ledger
-            erpnext.stock.stock_ledger.make_sl_entries = frappe.local.original_make_sl_entries
-            
+
+            erpnext.stock.stock_ledger.make_sl_entries = (
+                frappe.local.original_make_sl_entries
+            )
+
             # Clean up temporary references
-            if hasattr(frappe.local, 'temp_adjusted_make_sl_entries'):
-                delattr(frappe.local, 'temp_adjusted_make_sl_entries')
-                
+            if hasattr(frappe.local, "temp_adjusted_make_sl_entries"):
+                delattr(frappe.local, "temp_adjusted_make_sl_entries")
+
     except Exception as e:
         frappe.log_error(
             message=f"Error restoring stock ledger function: {str(e)}",
-            title="Stock Ledger Function Restore Error"
+            title="Stock Ledger Function Restore Error",
         )
 
 
 def get_issued_quantities_for_delivery_note(doc):
     """
     Get issued quantities for all items in the Delivery Note.
-    
+
     Returns:
         dict: Dictionary mapping item_code to issued quantity
     """
     issued_quantities = {}
-    
+
     try:
         for item in doc.items:
             if not item.against_sales_order:
                 continue
-                
+
             # Get the Sales Order to find linked Measurement Sheet
             try:
                 sales_order = frappe.get_doc("Sales Order", item.against_sales_order)
             except frappe.DoesNotExistError:
                 continue
-            
+
             if not sales_order.get("measurement_sheet"):
                 continue
-                
+
             # Find Tailoring Sheet linked to this Measurement Sheet
             tailoring_sheets = frappe.get_all(
                 "Tailoring Sheet",
                 filters={"measurement_sheet": sales_order.measurement_sheet},
-                fields=["name"]
+                fields=["name"],
             )
-            
+
             if not tailoring_sheets:
                 continue
-                
+
             # For each Tailoring Sheet, check issued quantities
             total_issued_qty = 0
-            
+
             for ts in tailoring_sheets:
                 issued_qty = get_issued_quantity_for_item(ts.name, item.item_code)
                 total_issued_qty += issued_qty
-            
+
             if total_issued_qty > 0:
                 issued_quantities[item.item_code] = total_issued_qty
-                
+
     except Exception as e:
         frappe.log_error(
             message=f"Error getting issued quantities for Delivery Note: {str(e)}",
-            title="Get Issued Quantities Error"
+            title="Get Issued Quantities Error",
         )
-    
+
     return issued_quantities
 
 
@@ -508,13 +543,13 @@ def show_stock_adjustment_notification(excluded_items, delivery_note_name):
             excluded_lines.append(
                 f"• {item['item_code']}: Stock update excluded (already issued {item['issued_qty']} qty via Stock Entry)"
             )
-        
+
         frappe.msgprint(
-            msg=f"<b>Stock updates automatically adjusted:</b><br><br>" + 
-                "<br>".join(excluded_lines) +
-                "<br><br><i>Items already issued through Stock Entry are excluded from stock updates while preserving Delivery Note records.</i>",
+            msg=f"<b>Stock updates automatically adjusted:</b><br><br>"
+            + "<br>".join(excluded_lines)
+            + "<br><br><i>Items already issued through Stock Entry are excluded from stock updates while preserving Delivery Note records.</i>",
             title="Stock Updates Adjusted",
-            indicator="blue"
+            indicator="blue",
         )
 
 
@@ -532,7 +567,7 @@ def get_issued_quantity_for_item(tailoring_sheet, item_code):
     """
     try:
         total_issued = 0.0
-        
+
         # Method 1: Direct link via custom_tailoring_sheet field
         stock_entries_direct = frappe.get_all(
             "Stock Entry",
@@ -541,22 +576,19 @@ def get_issued_quantity_for_item(tailoring_sheet, item_code):
                 "stock_entry_type": "Material Issue",
                 "docstatus": 1,  # Submitted only
             },
-            fields=["name"]
+            fields=["name"],
         )
-        
+
         for se in stock_entries_direct:
             se_items = frappe.get_all(
                 "Stock Entry Detail",
-                filters={
-                    "parent": se.name,
-                    "item_code": item_code
-                },
-                fields=["qty"]
+                filters={"parent": se.name, "item_code": item_code},
+                fields=["qty"],
             )
-            
+
             for se_item in se_items:
                 total_issued += float(se_item.qty or 0)
-        
+
         # Method 2: Link via Material Request reference
         # Get Material Requests linked to this Tailoring Sheet
         material_requests = frappe.get_all(
@@ -564,14 +596,14 @@ def get_issued_quantity_for_item(tailoring_sheet, item_code):
             filters={
                 "custom_tailoring_sheet": tailoring_sheet,
                 "material_request_type": "Material Issue",
-                "docstatus": 1  # Submitted only
+                "docstatus": 1,  # Submitted only
             },
-            fields=["name"]
+            fields=["name"],
         )
-        
+
         if material_requests:
             mr_names = [mr.name for mr in material_requests]
-            
+
             # Find Stock Entries that reference these Material Requests
             stock_entries_mr = frappe.get_all(
                 "Stock Entry",
@@ -580,28 +612,25 @@ def get_issued_quantity_for_item(tailoring_sheet, item_code):
                     "stock_entry_type": "Material Issue",
                     "docstatus": 1,  # Submitted only
                 },
-                fields=["name"]
+                fields=["name"],
             )
-            
+
             for se in stock_entries_mr:
                 se_items = frappe.get_all(
                     "Stock Entry Detail",
-                    filters={
-                        "parent": se.name,
-                        "item_code": item_code
-                    },
-                    fields=["qty"]
+                    filters={"parent": se.name, "item_code": item_code},
+                    fields=["qty"],
                 )
-                
+
                 for se_item in se_items:
                     total_issued += float(se_item.qty or 0)
-        
+
         return total_issued
-        
+
     except Exception as e:
         frappe.log_error(
             message=f"Error getting issued quantity for item {item_code} in tailoring sheet {tailoring_sheet}: {str(e)}",
-            title="Get Issued Quantity Error"
+            title="Get Issued Quantity Error",
         )
         return 0.0
 
@@ -610,7 +639,7 @@ def get_issued_quantity_for_item(tailoring_sheet, item_code):
 def preview_delivery_note_adjustments(delivery_note):
     """
     Preview stock update adjustments that will be made during Delivery Note submission.
-    
+
     This shows which items will have their stock updates excluded or adjusted
     without modifying the Delivery Note document itself.
 
@@ -622,7 +651,7 @@ def preview_delivery_note_adjustments(delivery_note):
     """
     try:
         adjustments = []
-        
+
         # Convert to document object if it's a dict
         if isinstance(delivery_note, dict):
             doc = frappe._dict(delivery_note)
@@ -633,45 +662,47 @@ def preview_delivery_note_adjustments(delivery_note):
         for item in doc.get("items", []):
             if not item.get("against_sales_order"):
                 continue
-                
+
             # Get the Sales Order to find linked Measurement Sheet
             try:
                 sales_order = frappe.get_doc("Sales Order", item.against_sales_order)
             except frappe.DoesNotExistError:
                 continue
-            
+
             if not sales_order.get("measurement_sheet"):
                 continue
-                
+
             # Find Tailoring Sheet linked to this Measurement Sheet
             tailoring_sheets = frappe.get_all(
                 "Tailoring Sheet",
                 filters={"measurement_sheet": sales_order.measurement_sheet},
-                fields=["name"]
+                fields=["name"],
             )
-            
+
             if not tailoring_sheets:
                 continue
-                
+
             # For each Tailoring Sheet, check issued quantities
             total_issued_qty = 0
-            
+
             for ts in tailoring_sheets:
                 issued_qty = get_issued_quantity_for_item(ts.name, item.item_code)
                 total_issued_qty += issued_qty
-            
+
             # If stock has been issued for this item, add to adjustments
             if total_issued_qty > 0:
                 original_qty = float(item.qty or 0)
                 remaining_qty = max(0, original_qty - total_issued_qty)
-                
-                adjustments.append({
-                    "item_code": item.item_code,
-                    "original_qty": original_qty,
-                    "issued_qty": total_issued_qty,
-                    "remaining_qty": remaining_qty,
-                    "stock_update_qty": remaining_qty  # This is what will actually update stock
-                })
+
+                adjustments.append(
+                    {
+                        "item_code": item.item_code,
+                        "original_qty": original_qty,
+                        "issued_qty": total_issued_qty,
+                        "remaining_qty": remaining_qty,
+                        "stock_update_qty": remaining_qty,  # This is what will actually update stock
+                    }
+                )
 
         return adjustments
 

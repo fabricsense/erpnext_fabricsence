@@ -3,6 +3,35 @@ let cached_contractors = null; // Cache contractors for selected service
 
 frappe.ui.form.on("Task", {
 	refresh: function (frm) {
+		// Set default accounts for new Task
+		if (frm.doc.__islocal && frm.doc.company) {
+			// Set default Expense Account to "Contractor Expense - F"
+			if (!frm.doc.custom_expense_account && frm.fields_dict.custom_expense_account) {
+				frappe.db.get_value('Account', {
+					'account_name': 'Contractor Expense',
+					'company': frm.doc.company,
+					'is_group': 0
+				}, 'name', (r) => {
+					if (r && r.name) {
+						frm.set_value('custom_expense_account', r.name);
+					}
+				});
+			}
+			
+			// Set default Payable Account to "Contractor Payable - F"
+			if (!frm.doc.custom_payable_account && frm.fields_dict.custom_payable_account) {
+				frappe.db.get_value('Account', {
+					'account_name': 'Contractor Payable',
+					'company': frm.doc.company,
+					'is_group': 0
+				}, 'name', (r) => {
+					if (r && r.name) {
+						frm.set_value('custom_payable_account', r.name);
+					}
+				});
+			}
+		}
+		
 		// Make project field read-only if it has a value
 		if (frm.fields_dict.project) {
 			if (frm.doc.project) {
@@ -117,7 +146,8 @@ frappe.ui.form.on("Task", {
 												// On confirm - create stock entry
 												open_stock_entry_form(
 													r.message,
-													tailoring_sheet_value,frm
+													tailoring_sheet_value,
+													frm
 												);
 											},
 											function () {
@@ -138,6 +168,24 @@ frappe.ui.form.on("Task", {
 				});
 			}
 		}
+		frm.set_query("custom_expense_account", function () {
+			return {
+				filters: [
+					["Account", "account_type", "in", ["Indirect Expense"]],
+					["Account", "is_group", "=", 0],
+					["Account", "company", "=", frm.doc.company],
+				],
+			};
+		});
+		frm.set_query("custom_payable_account", function () {
+			return {
+				filters: [
+					["Account", "account_type", "in", ["Payable"]],
+					["Account", "is_group", "=", 0],
+					["Account", "company", "=", frm.doc.company],
+				],
+			};
+		});
 	},
 
 	custom_assigned_contractor: function (frm) {
@@ -509,7 +557,7 @@ function calculate_service_rate_and_charges(frm) {
 	}
 }
 
-function open_stock_entry_form(material_request_data, tailoring_sheet,frm) {
+function open_stock_entry_form(material_request_data, tailoring_sheet, frm) {
 	// Create Stock Entry from Material Request
 	if (material_request_data.items && material_request_data.items.length > 0) {
 		// Create new Stock Entry document

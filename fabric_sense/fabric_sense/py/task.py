@@ -244,6 +244,7 @@ def create_contractor_payment_history(doc, method=None):
                 "amount": payment_amount,
                 "status": "Unpaid",
                 "amount_paid": 0,
+                "payable_account": doc.custom_payable_account
             }
         )
 
@@ -264,6 +265,138 @@ def create_contractor_payment_history(doc, method=None):
         )
         frappe.msgprint(
             _("Failed to create payment history: {0}").format(str(e)),
+            indicator="red",
+            alert=True,
+        )
+
+
+def create_journal_entry_for_completed_task(doc, method=None):
+    """
+    Create and submit Journal Entry when task status changes to Completed.
+
+    This function is called via hooks when a Task is saved.
+    It checks if the status changed to "Completed" and creates a journal entry record
+    with debit to expense account and credit to payable account (contractor liability).
+    The Journal Entry is automatically submitted.
+
+    Args:
+        doc: Task document
+        method: Event method name
+    """
+    # Only process if status is Completed
+    if doc.status != "Completed":
+        return
+
+    # Check if status actually changed to Completed
+    if not doc.is_new():
+        old_doc = doc.get_doc_before_save()
+        if old_doc and old_doc.status == "Completed":
+            # Status was already Completed, no need to create journal entry again
+            return
+
+    # Check if journal entry already exists for this task
+    existing = frappe.db.exists("Journal Entry", {"custom_task": doc.name})
+
+    if existing:
+        return
+
+    # Check if contractor is assigned
+    if not doc.custom_assigned_contractor:
+        frappe.msgprint(
+            _("No contractor assigned to this task. Journal Entry not created."),
+            indicator="orange",
+            alert=True,
+        )
+        return
+
+    # Check if payment amount is set
+    payment_amount = doc.custom_total_contractor_amount or 0
+
+    if not payment_amount or payment_amount <= 0:
+        frappe.msgprint(
+            _("Payment amount not set for this task. Journal Entry not created."),
+            indicator="orange",
+            alert=True,
+        )
+        return
+
+    # Get payable account from task or use default
+    payable_account = doc.custom_payable_account
+    if not payable_account:
+        frappe.msgprint(
+            _("Payable account not set for this task. Journal Entry not created."),
+            indicator="orange",
+            alert=True,
+        )
+        return
+    
+    expense_account = doc.custom_expense_account
+    if not expense_account:
+        frappe.msgprint(
+            _("Expense account not set for this task. Journal Entry not created."),
+            indicator="orange",
+            alert=True,
+        )
+        return
+
+
+    # Get company from task
+    company = doc.company if hasattr(doc, "company") and doc.company else frappe.defaults.get_user_default("Company")
+    
+    if not company:
+        frappe.msgprint(
+            _("Company not found. Journal Entry not created."),
+            indicator="orange",
+            alert=True,
+        )
+        return
+
+    # Create journal entry record
+    try:
+        journal_entry = frappe.get_doc(
+            {
+                "doctype": "Journal Entry",
+                "company": company,
+                "posting_date": frappe.utils.today(),
+                "custom_task": doc.name,
+                "user_remark": f"Journal Entry for Task {doc.name} - {doc.subject or ''}",
+                "accounts": [
+                    {
+                        "account": expense_account,
+                        "debit_in_account_currency": payment_amount,
+                        "credit_in_account_currency": 0,
+                    },
+                    {
+                        "account": payable_account,
+                        "party_type": "Employee",
+                        "party": doc.custom_assigned_contractor,
+                        "debit_in_account_currency": 0,
+                        "credit_in_account_currency": payment_amount,
+                    }
+                ]
+            }
+        )
+
+        journal_entry.insert(ignore_permissions=True)
+        
+        # Submit the Journal Entry automatically
+        journal_entry.submit()
+        frappe.db.commit()
+
+        frappe.msgprint(
+            _("Journal Entry created and submitted: {0}").format(
+                frappe.get_desk_link("Journal Entry", journal_entry.name)
+            ),
+            indicator="green",
+            alert=True,
+        )
+
+    except Exception as e:
+        frappe.log_error(
+            frappe.get_traceback(), "Create Journal Entry for Task Failed"
+        )
+        frappe.msgprint(
+            _("Failed to create journal entry: {0}").format(str(e)),
             indicator="red",
             alert=True,
         )
@@ -664,7 +797,7 @@ def get_material_request_items_for_stock_entry(tailoring_sheet):
     """
     Get Material Request items for Stock Entry creation with remaining quantities.
 
-    Finds ALL Material Requests with type "Material Issue" linked to the Tailoring Sheet via custom_tailoring_sheet.
+    Finds ALL Material Requests with type "Material Issue" or "Purchase" linked to the Tailoring Sheet via custom_tailoring_sheet.
     Aggregates quantities for the same items across all Material Requests.
     Fetches existing Stock Entry records for this tailoring sheet and calculates remaining quantities.
     Returns only items with remaining quantities > 0.
@@ -676,13 +809,13 @@ def get_material_request_items_for_stock_entry(tailoring_sheet):
         dict: Contains material_request_name, items list (remaining quantities only), docstatus, and message
     """
     try:
-        # Get all Material Requests (type "Material Issue") linked to this Tailoring Sheet
+        # Get all Material Requests (type "Material Issue" or "Purchase") linked to this Tailoring Sheet
         # Prioritize submitted MRs, but include drafts if no submitted ones exist
         submitted_mrs = frappe.get_all(
             "Material Request",
             filters={
                 "custom_tailoring_sheet": tailoring_sheet,
-                "material_request_type": "Material Issue",
+                "material_request_type": ["in", ["Material Issue", "Purchase"]],
                 "docstatus": 1,  # Submitted
             },
             fields=["name", "docstatus"],
@@ -693,7 +826,7 @@ def get_material_request_items_for_stock_entry(tailoring_sheet):
             "Material Request",
             filters={
                 "custom_tailoring_sheet": tailoring_sheet,
-                "material_request_type": "Material Issue",
+                "material_request_type": ["in", ["Material Issue", "Purchase"]],
                 "docstatus": 0,  # Draft
             },
             fields=["name", "docstatus"],
@@ -708,7 +841,7 @@ def get_material_request_items_for_stock_entry(tailoring_sheet):
                 "material_request_name": None,
                 "items": [],
                 "docstatus": None,
-                "message": "No Material Request (Material Issue) found for this Tailoring Sheet",
+                "message": "No Material Request (Material Issue or Purchase) found for this Tailoring Sheet",
             }
 
         # Dictionary to store aggregated items by item_code
@@ -1048,7 +1181,7 @@ def notify_assigned_contractor(doc, method=None):
             )
 
         # Expected Start Date
-        if getattr(doc, "expected_start_date", None):
+        if getattr(doc, "exp_start_date", None):
             rows.append(
                 f"""
                 <tr>
@@ -1056,14 +1189,14 @@ def notify_assigned_contractor(doc, method=None):
                         <strong style="color: #374151;">📅 Expected Start Date</strong>
                     </td>
                     <td style="padding: 12px 16px; border-bottom: 1px solid #e5e7eb;">
-                        <span style="color: #1f2937; font-weight: 600;">{formatdate(doc.expected_start_date)}</span>
+                        <span style="color: #1f2937; font-weight: 600;">{formatdate(doc.exp_start_date)}</span>
                     </td>
                 </tr>
             """
             )
 
         # Expected End Date
-        if getattr(doc, "expected_end_date", None):
+        if getattr(doc, "exp_end_date", None):
             rows.append(
                 f"""
                 <tr>
@@ -1071,7 +1204,7 @@ def notify_assigned_contractor(doc, method=None):
                         <strong style="color: #374151;">📅 Expected End Date</strong>
                     </td>
                     <td style="padding: 12px 16px; border-bottom: 1px solid #e5e7eb;">
-                        <span style="color: #1f2937; font-weight: 600;">{formatdate(doc.expected_end_date)}</span>
+                        <span style="color: #1f2937; font-weight: 600;">{formatdate(doc.exp_end_date)}</span>
                     </td>
                 </tr>
             """

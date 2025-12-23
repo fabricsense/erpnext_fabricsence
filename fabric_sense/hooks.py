@@ -106,7 +106,8 @@ doc_events = {
             "fabric_sense.fabric_sense.py.task.notify_assigned_contractor",
         ],
         "on_update": [
-            "fabric_sense.fabric_sense.py.task.create_contractor_payment_history"
+            "fabric_sense.fabric_sense.py.task.create_contractor_payment_history",
+            "fabric_sense.fabric_sense.py.task.create_journal_entry_for_completed_task"
         ],
     },
     "Stock Ledger Entry": {
@@ -195,7 +196,8 @@ doc_events = {
 # Override standard doctype classes
 
 override_doctype_class = {
-    "Item": "fabric_sense.fabric_sense.overrides.sku_generation.CustomItem"
+    "Item": "fabric_sense.fabric_sense.overrides.sku_generation.CustomItem",
+    "GL Entry": "fabric_sense.fabric_sense.overrides.gl_entry_override.CustomGLEntry"
 }
 
 # Document Events

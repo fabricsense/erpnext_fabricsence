@@ -11,6 +11,7 @@
   "task",
   "project",
   "amount",
+  "payable_account",
   "column_break_cvha",
   "amount_paid",
   "balance",
@@ -90,12 +91,20 @@
    "label": "Balance",
    "precision": "2",
    "read_only": 1
+  },
+  {
+   "fieldname": "payable_account",
+   "fieldtype": "Link",
+   "hidden": 1,
+   "label": "Payable Account",
+   "options": "Account",
+   "read_only": 1
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2025-12-22 12:10:41.720989",
+ "modified": "2025-12-23 13:28:14.846594",
  "modified_by": "Administrator",
  "module": "Fabric Sense",
  "name": "Contractor Payment History",
@@ -111,6 +120,30 @@
    "read": 1,
    "report": 1,
    "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Sales Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Sales User",
    "share": 1,
    "write": 1
   }

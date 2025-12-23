@@ -6,6 +6,13 @@ from frappe.model.document import Document  # type: ignore
 from frappe.utils import formatdate  # type: ignore
 from typing import Dict, List, Any, Optional
 import erpnext  # type: ignore
+from fabric_sense.fabric_sense.py.measurement_sheet_pricing import (
+    get_pricing_summary,
+    get_consolidated_items_with_pricing_rules,
+    _get_price_list_from_customer,
+    _get_selection_item_rates,
+)
+
 
 # Constants
 STATUS_APPROVED = "Approved"
@@ -133,14 +140,51 @@ class MeasurementSheet(Document):
                 frappe.throw("Selection is required for Blinds")
 
     def calculate_totals(self):
-        """Calculate total amount including visiting charge"""
+        """Calculate total amount including visiting charge and pricing rule discounts"""
         total_amount = 0
 
-        # Sum all amounts from measurement details
-        if self.measurement_details:
-            for row in self.measurement_details:
-                if row.amount:
-                    total_amount += row.amount
+        # If document is saved and has customer, use pricing summary for accurate totals with discounts
+        if not self.is_new() and self.name and self.customer and self.measurement_details:
+            try:
+                # Get pricing summary with discounted prices
+                pricing_summary = get_pricing_summary(self.name)
+                if pricing_summary and pricing_summary.get("items"):
+                    # Sum amounts from pricing summary (already includes discounts)
+                    # The pricing summary shows: quantity * price_after_discount = amount
+                    for item in pricing_summary["items"]:
+                        amount = float(item.get("price_after_discount", 0) or 0) * float(item.get("quantity", 0) or 0)
+                        total_amount += amount
+                    
+                    # Add service charges (stitching and fitting) from measurement details
+                    # These are not affected by pricing rules
+                    service_charges = 0
+                    for row in self.measurement_details:
+                        stitching_charge = float(row.stitching_charge or 0)
+                        fitting_charge = float(row.fitting_charge or 0)
+                        service_charges += stitching_charge + fitting_charge
+                    
+                    total_amount += service_charges
+                else:
+                    # Fallback to original calculation if pricing summary not available
+                    for row in self.measurement_details:
+                        if row.amount:
+                            total_amount += row.amount
+            except Exception as e:
+                # Log error even in fallback path for debugging
+                frappe.log_error(
+                    f"Error calculating totals with pricing summary for {self.name}: {str(e)}\n{frappe.get_traceback()}",
+                    "Measurement Sheet Calculate Totals Error"
+                )
+                # Fallback to original calculation
+                for row in self.measurement_details:
+                    if row.amount:
+                        total_amount += row.amount
+        else:
+            # For new documents or without customer, use original calculation
+            if self.measurement_details:
+                for row in self.measurement_details:
+                    if row.amount:
+                        total_amount += row.amount
 
         # Add visiting charge if present
         visiting_charge = float(self.visiting_charge or 0)
@@ -440,138 +484,6 @@ def _add_service_charge_item_if_valid(
     return item_idx
 
 
-def _get_price_list_from_customer(customer: str) -> Optional[str]:
-    """
-    Get price list from customer by following the chain:
-    Customer → customer_group → default_price_list
-
-    Args:
-            customer: Customer name
-
-    Returns:
-            Price list name or None if not found
-    """
-    if not customer:
-        return None
-
-    try:
-        # Get customer_group from Customer
-        customer_group = frappe.db.get_value("Customer", customer, "customer_group")
-        if not customer_group:
-            return None
-
-        # Get default_price_list from Customer Group
-        default_price_list = frappe.db.get_value(
-            "Customer Group", customer_group, "default_price_list"
-        )
-        return default_price_list
-    except Exception as e:
-        frappe.log_error(
-            f"Error getting price list from customer {customer}: {str(e)}\n{frappe.get_traceback()}",
-            "Get Price List Error",
-        )
-        return None
-
-
-def _get_default_selling_price_list() -> Optional[str]:
-    """
-    Get default selling price list from Selling Settings.
-
-    Returns:
-            Default selling price list name or None if not found
-    """
-    try:
-        default_price_list = frappe.db.get_value(
-            "Selling Settings", "Selling Settings", "selling_price_list"
-        )
-        return default_price_list
-    except Exception as e:
-        frappe.log_error(
-            f"Error getting default selling price list: {str(e)}\n{frappe.get_traceback()}",
-            "Get Default Price List Error",
-        )
-        return None
-
-
-def _get_selection_item_rates(
-    selection_items: List[str], price_list: Optional[str] = None
-) -> Dict[str, float]:
-    """
-    Get rates for selection items (Blinds) from Item Price.
-    Uses batch queries to avoid N+1 query problem.
-    
-    Price lookup order:
-    1. Customer's price list (if provided)
-    2. Default Selling Price List (from Selling Settings)
-    3. If not found: 0.0
-
-    Args:
-            selection_items: List of item codes
-            price_list: Optional price list name to filter by
-
-    Returns:
-            Mapping of item_code to rate (defaults to 0 if not found in price lists)
-    """
-    if not selection_items:
-        return {}
-
-    # Remove duplicates to avoid unnecessary queries
-    unique_items = list(set(selection_items))
-
-    # First, try to get prices from the specific price_list (if provided)
-    item_prices = {}
-    if price_list:
-        filters = {
-            "item_code": ["in", unique_items],
-            "selling": 1,
-            "price_list": price_list,
-        }
-        price_list_data = frappe.db.get_all(
-            "Item Price",
-            filters=filters,
-            fields=["item_code", "price_list_rate"],
-            order_by="modified desc",
-        )
-
-        # Group by item_code and get the most recent price for each
-        seen_items = set()
-        for price in price_list_data:
-            if price.item_code not in seen_items and price.price_list_rate is not None:
-                item_prices[price.item_code] = float(price.price_list_rate)
-                seen_items.add(price.item_code)
-
-    # Fallback: Try to get prices from default selling price list (if items still missing)
-    items_without_prices = [item for item in unique_items if item not in item_prices]
-    if items_without_prices:
-        default_price_list = _get_default_selling_price_list()
-        if default_price_list and default_price_list != price_list:
-            filters = {
-                "item_code": ["in", items_without_prices],
-                "selling": 1,
-                "price_list": default_price_list,
-            }
-            default_price_data = frappe.db.get_all(
-                "Item Price",
-                filters=filters,
-                fields=["item_code", "price_list_rate"],
-                order_by="modified desc",
-            )
-
-            seen_items = set(item_prices.keys())
-            for price in default_price_data:
-                if (
-                    price.item_code not in seen_items
-                    and price.price_list_rate is not None
-                ):
-                    item_prices[price.item_code] = float(price.price_list_rate)
-                    seen_items.add(price.item_code)
-
-    # Ensure all items have a rate (default to 0 if not found in any price list)
-    result = {}
-    for item in unique_items:
-        result[item] = item_prices.get(item, 0.0)
-
-    return result
 
 
 def _extract_items_from_measurement_details(
@@ -722,6 +634,48 @@ def _extract_items_from_measurement_details(
     return final_items
 
 
+def _get_delivery_charge_item() -> Optional[str]:
+    """
+    Get the first active item from 'Delivery Charge' item group.
+
+    Returns:
+            Item code or None if not found
+    """
+    try:
+        # Check if 'Delivery Charge' item group exists
+        if not frappe.db.exists("Item Group", "Delivery Charge"):
+            frappe.log_error(
+                "Item Group 'Delivery Charge' does not exist",
+                "Delivery Charge Item Fetch Error"
+            )
+            return None
+
+        # Fetch first active item from 'Delivery Charge' item group
+        item = frappe.db.get_value(
+            "Item",
+            filters={
+                "item_group": "Delivery Charge",
+                "disabled": 0
+            },
+            fieldname="name"
+        )
+
+        if not item:
+            frappe.log_error(
+                "No active items found in 'Delivery Charge' item group",
+                "Delivery Charge Item Fetch Error"
+            )
+
+        return item
+
+    except Exception as e:
+        frappe.log_error(
+            f"Error fetching delivery charge item: {str(e)}",
+            "Delivery Charge Item Fetch Error"
+        )
+        return None
+
+
 def _get_company_for_sales_order(customer: str) -> Optional[str]:
     """
     Get company for Sales Order.
@@ -845,6 +799,27 @@ def get_sales_order_data_from_measurement_sheet(
         )
         frappe.throw(
             f"No valid items found in Measurement Sheet '{measurement_sheet_name}' to create Sales Order"
+        )
+
+    # Add delivery charge item if visiting_charge exists
+    if ms.visiting_charge and ms.visiting_charge > 0:
+        delivery_charge_item = _get_delivery_charge_item()
+        if delivery_charge_item:
+            # Add delivery charge item with qty=1 and rate=visiting_charge
+            items.append({
+                "item_code": delivery_charge_item,
+                "qty": 1,
+                "rate": ms.visiting_charge,
+                "idx": len(items) + 1
+            })
+        else:
+            # Log warning but don't fail - visiting charge exists but no delivery charge item found
+            frappe.msgprint(
+                f"Visiting Charge of {frappe.format_value(ms.visiting_charge, {'fieldtype': 'Currency'})} exists, "
+                "but no item found in 'Delivery Charge' item group. "
+                "Please create an item in 'Delivery Charge' item group to include it in Sales Order.",
+                indicator="orange",
+                title="Delivery Charge Item Not Found"
         )
 
     # Return data for pre-populating Sales Order form
@@ -1178,7 +1153,7 @@ def get_available_projects(doctype, txt, searchfield, start, page_len, filters):
         
         # Base query to get projects
         query = """
-            SELECT DISTINCT p.name
+            SELECT DISTINCT p.name, p.project_name
             FROM `tabProject` p
             WHERE p.name NOT IN (
                 SELECT DISTINCT ms.project
@@ -1222,74 +1197,78 @@ def get_available_projects(doctype, txt, searchfield, start, page_len, filters):
         return []
 
 
+# @frappe.whitelist()
+# def get_fresh_item_price(item_code, customer=None):
+#     """
+#     Get fresh item price respecting price list restrictions.
+#     Uses same logic as fetch_item_rate: customer price list → default → 0
+#     This method is whitelisted for client-side calls.
+    
+#     Args:
+#         item_code: Item code to get price for
+#         customer: Optional customer name to determine price list
+    
+#     Returns:
+#         Dict with price_list_rate and source
+#     """
+#     try:
+#         if not item_code:
+#             return {"price_list_rate": 0, "source": "no_item"}
+        
+#         # Step 1: Get customer's price list (if customer provided)
+#         price_list = None
+#         if customer:
+#             price_list = _get_price_list_from_customer(customer)
+        
+#         # Step 2: Try customer's price list first
+#         if price_list:
+#             item_price = frappe.db.get_value(
+#                 "Item Price",
+#                 {
+#                     "item_code": item_code,
+#                     "selling": 1,
+#                     "price_list": price_list,
+#                 },
+#                 "price_list_rate",
+#                 order_by="modified desc",
+#             )
+#             if item_price and item_price > 0:
+#                 return {
+#                     "price_list_rate": float(item_price),
+#                     "source": "customer_price_list",
+#                     "price_list": price_list,
+#                 }
+        
+#         # Step 3: Try default selling price list
+#         default_price_list = _get_default_selling_price_list()
+#         if default_price_list and default_price_list != price_list:
+#             item_price = frappe.db.get_value(
+#                 "Item Price",
+#                 {
+#                     "item_code": item_code,
+#                     "selling": 1,
+#                     "price_list": default_price_list,
+#                 },
+#                 "price_list_rate",
+#                 order_by="modified desc",
+#             )
+#             if item_price and item_price > 0:
+#                 return {
+#                     "price_list_rate": float(item_price),
+#                     "source": "default_price_list",
+#                     "price_list": default_price_list,
+#                 }
+        
+#         # Step 4: Return 0 if not found (NO standard_rate fallback)
+#         return {"price_list_rate": 0, "source": "not_found"}
+
+
 @frappe.whitelist()
 def get_fresh_item_price(item_code, customer=None):
     """
-    Get fresh item price respecting price list restrictions.
-    Uses same logic as fetch_item_rate: customer price list → default → 0
-    This method is whitelisted for client-side calls.
-    
-    Args:
-        item_code: Item code to get price for
-        customer: Optional customer name to determine price list
-    
-    Returns:
-        Dict with price_list_rate and source
+    Fetch item price using ERPNext pricing engine.
+    Wrapper function for backward compatibility with JavaScript calls.
+    Delegates to the pricing helper module.
     """
-    try:
-        if not item_code:
-            return {"price_list_rate": 0, "source": "no_item"}
-        
-        # Step 1: Get customer's price list (if customer provided)
-        price_list = None
-        if customer:
-            price_list = _get_price_list_from_customer(customer)
-        
-        # Step 2: Try customer's price list first
-        if price_list:
-            item_price = frappe.db.get_value(
-                "Item Price",
-                {
-                    "item_code": item_code,
-                    "selling": 1,
-                    "price_list": price_list,
-                },
-                "price_list_rate",
-                order_by="modified desc",
-            )
-            if item_price and item_price > 0:
-                return {
-                    "price_list_rate": float(item_price),
-                    "source": "customer_price_list",
-                    "price_list": price_list,
-                }
-        
-        # Step 3: Try default selling price list
-        default_price_list = _get_default_selling_price_list()
-        if default_price_list and default_price_list != price_list:
-            item_price = frappe.db.get_value(
-                "Item Price",
-                {
-                    "item_code": item_code,
-                    "selling": 1,
-                    "price_list": default_price_list,
-                },
-                "price_list_rate",
-                order_by="modified desc",
-            )
-            if item_price and item_price > 0:
-                return {
-                    "price_list_rate": float(item_price),
-                    "source": "default_price_list",
-                    "price_list": default_price_list,
-                }
-        
-        # Step 4: Return 0 if not found (NO standard_rate fallback)
-        return {"price_list_rate": 0, "source": "not_found"}
-        
-    except Exception as e:
-        frappe.log_error(
-            f"Error in get_fresh_item_price for {item_code}: {str(e)}\n{frappe.get_traceback()}",
-            "Get Fresh Item Price Error",
-        )
-        return {"price_list_rate": 0, "source": "error"}
+    from fabric_sense.fabric_sense.py.measurement_sheet_pricing import get_fresh_item_price as _get_fresh_item_price
+    return _get_fresh_item_price(item_code, customer)

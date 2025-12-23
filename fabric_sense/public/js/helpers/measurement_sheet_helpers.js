@@ -152,9 +152,13 @@ frappe.provide("fabric_sense.measurement_sheet");
 									cur_frm.doctype === "Sales Order" &&
 									cur_frm.doc.name === so.name
 								) {
+									// Store items data for rate correction
+									const itemsToAdd = data.items || [];
+									
 									// Add items one by one to trigger all the field triggers
-									(data.items || []).forEach(function (item, index) {
+									itemsToAdd.forEach(function (item, index) {
 										let row = frappe.model.add_child(cur_frm.doc, "items");
+										
 										frappe.model
 											.set_value(
 												row.doctype,
@@ -163,12 +167,16 @@ frappe.provide("fabric_sense.measurement_sheet");
 												item.item_code
 											)
 											.then(() => {
-												frappe.model.set_value(
+												// Set qty first
+												return frappe.model.set_value(
 													row.doctype,
 													row.name,
 													"qty",
 													item.qty || 1
 												);
+											})
+											.then(() => {
+												// Set rate immediately
 												frappe.model.set_value(
 													row.doctype,
 													row.name,
@@ -198,9 +206,10 @@ frappe.provide("fabric_sense.measurement_sheet");
 											});
 									});
 
-									// Refresh the items table after adding all items
+									// Force set rates again after all items are added to override any auto-fetched rates
 									setTimeout(() => {
 										if (cur_frm) {
+											// Final refresh and recalculate
 											cur_frm.refresh_field("items");
 											cur_frm.calculate_taxes_and_totals();
 										}
@@ -242,7 +251,7 @@ frappe.provide("fabric_sense.measurement_sheet");
 		totalsCalculationTimer = setTimeout(() => perform_calculate_totals(frm), 50);
 	};
 
-	function perform_calculate_totals(frm) {
+	async function perform_calculate_totals(frm) {
 		if (!frm.doc.measurement_details || frm.doc.measurement_details.length === 0) {
 			const visiting_charge = parseFloat(frm.doc.visiting_charge) || 0;
 			frm.set_value("total_amount", visiting_charge);
@@ -250,9 +259,55 @@ frappe.provide("fabric_sense.measurement_sheet");
 		}
 
 		const visiting_charge = parseFloat(frm.doc.visiting_charge) || 0;
-		const total_amount = (frm.doc.measurement_details || []).reduce((acc, row) => {
-			return acc + (parseFloat(row.amount) || 0);
-		}, 0);
+		let total_amount = 0;
+
+		// If document is saved and has customer, use pricing summary for accurate totals with discounts
+		if (!frm.is_new() && frm.doc.name && frm.doc.customer) {
+			try {
+				const pricingSummary = await frappe.call({
+					method: "fabric_sense.fabric_sense.doctype.measurement_sheet.measurement_sheet.get_pricing_summary",
+					args: {
+						measurement_sheet_name: frm.doc.name,
+					},
+				});
+
+				if (pricingSummary && pricingSummary.message && pricingSummary.message.items && pricingSummary.message.items.length > 0) {
+					// Sum amounts from pricing summary (already includes discounts)
+					const materialItemsTotal = pricingSummary.message.items.reduce((acc, item) => {
+						const quantity = parseFloat(item.quantity || 0);
+						const priceAfterDiscount = parseFloat(item.price_after_discount || 0);
+						return acc + (quantity * priceAfterDiscount);
+					}, 0);
+
+					// Add service charges (stitching and fitting) from measurement details
+					// These are not affected by pricing rules
+					const serviceCharges = (frm.doc.measurement_details || []).reduce((acc, row) => {
+						const stitching = parseFloat(row.stitching_charge || 0);
+						const fitting = parseFloat(row.fitting_charge || 0);
+						return acc + stitching + fitting;
+					}, 0);
+
+					total_amount = materialItemsTotal + serviceCharges;
+				} else {
+					// Fallback to original calculation if pricing summary not available
+					total_amount = (frm.doc.measurement_details || []).reduce((acc, row) => {
+						return acc + (parseFloat(row.amount) || 0);
+					}, 0);
+				}
+			} catch (error) {
+				// Fallback to original calculation on error
+				console.error("Error calculating totals with pricing summary:", error);
+				total_amount = (frm.doc.measurement_details || []).reduce((acc, row) => {
+					return acc + (parseFloat(row.amount) || 0);
+				}, 0);
+			}
+		} else {
+			// For new documents or without customer, use original calculation
+			total_amount = (frm.doc.measurement_details || []).reduce((acc, row) => {
+				return acc + (parseFloat(row.amount) || 0);
+			}, 0);
+		}
+
 		frm.set_value("total_amount", total_amount + visiting_charge);
 	}
 
@@ -382,7 +437,6 @@ frappe.provide("fabric_sense.measurement_sheet");
 
 			return customer_group_data.message.default_price_list;
 		} catch (error) {
-			console.error(`Error getting price list from customer ${customer}:`, error);
 			return null;
 		}
 	};
@@ -408,7 +462,6 @@ frappe.provide("fabric_sense.measurement_sheet");
 			}
 			return null;
 		} catch (error) {
-			console.error("Error getting default selling price list:", error);
 			return null;
 		}
 	};
@@ -421,14 +474,11 @@ frappe.provide("fabric_sense.measurement_sheet");
 			price_list = await ns.get_price_list_from_customer(frm.doc.customer);
 		}
 
-		console.log(`[Item Selection] Selected Item: ${item_code}, Price List: ${price_list || 'None'}`);
-
 		// Create cache key that includes both item_code and price_list
 		const cacheKey = price_list ? `${item_code}::${price_list}` : `${item_code}::default`;
 
 		// Only use cache for positive rates, never cache zero/null rates
 		if (itemRateCache[cacheKey] !== undefined && itemRateCache[cacheKey] > 0) {
-			console.log(`[Item Selection] Selection Rate (from cache): ${itemRateCache[cacheKey]}`);
 			return Promise.resolve(itemRateCache[cacheKey]);
 		}
 
@@ -449,7 +499,6 @@ frappe.provide("fabric_sense.measurement_sheet");
 						if (rate > 0) {
 							itemRateCache[cacheKey] = rate;
 						}
-						console.log(`[Item Selection] Selection Rate (from customer price list '${price_list}'): ${rate}`);
 						return rate;
 					}
 				}
@@ -457,7 +506,6 @@ frappe.provide("fabric_sense.measurement_sheet");
 
 			// Fallback: Try to get price from default selling price list (from Selling Settings)
 			const default_price_list = await ns.get_default_selling_price_list();
-			console.log(`[Item Selection] Trying default price list: ${default_price_list || 'None'}`);
 			
 			if (default_price_list && default_price_list !== price_list) {
 				const defaultPrices = await frappe.db.get_list("Item Price", {
@@ -478,7 +526,6 @@ frappe.provide("fabric_sense.measurement_sheet");
 						if (rate > 0) {
 							itemRateCache[cacheKey] = rate;
 						}
-						console.log(`[Item Selection] Selection Rate (from default price list '${default_price_list}'): ${rate}`);
 						return rate;
 					}
 				}
@@ -486,11 +533,9 @@ frappe.provide("fabric_sense.measurement_sheet");
 
 			// No price found in any price list - return 0
 			itemRateCache[cacheKey] = 0;
-			console.log(`[Item Selection] Selection Rate: 0 (no price found in any price list)`);
 			return 0;
 		} catch (error) {
 			itemRateCache[cacheKey] = 0;
-			console.log(`[Item Selection] Selection Rate: 0 (error occurred)`);
 			return 0;
 		}
 	};
@@ -740,7 +785,6 @@ frappe.provide("fabric_sense.measurement_sheet");
 					fabric_name: fabric_code,
 				};
 			} catch (error) {
-				console.error(`Error checking stock for ${fabric_code}:`, error);
 				return {
 					is_available: true,
 					available_qty: 0,
@@ -783,7 +827,6 @@ frappe.provide("fabric_sense.measurement_sheet");
 				fabric_name: fabric_code,
 			};
 		} catch (error) {
-			console.error(`Error checking stock for ${fabric_code}:`, error);
 			return {
 				is_available: true,
 				available_qty: 0,
@@ -808,13 +851,11 @@ frappe.provide("fabric_sense.measurement_sheet");
 			try {
 				const grid = frm.fields_dict.measurement_details.grid;
 				if (!grid) {
-					console.warn("Grid not found for measurement_details");
 					return;
 				}
 
 				const grid_row = grid.get_row(cdn);
 				if (!grid_row) {
-					console.warn("Grid row not found for cdn:", cdn);
 					return;
 				}
 
@@ -885,12 +926,9 @@ frappe.provide("fabric_sense.measurement_sheet");
 							input_elem.style.backgroundColor = "";
 						}
 					}
-				} else {
-					console.warn("Could not find fabric_selected field element for highlighting");
 				}
 			} catch (error) {
-				// Log error for debugging
-				console.error("Error highlighting fabric field:", error);
+				// Silently handle errors
 			}
 		}, 200); // Increased timeout to 200ms for better reliability
 	};
@@ -1066,7 +1104,6 @@ frappe.provide("fabric_sense.measurement_sheet");
 		const order_type = frm.doc.order_type;
 		
 		// Debug: Log order_type value (remove after testing)
-		// console.log("Order Type:", order_type, "Project:", frm.doc.project);
 		
 		// Only require project if order_type is explicitly "Fitting"
 		// For "Delivery" or any other value (including null/undefined), project is NOT required
@@ -1291,5 +1328,201 @@ frappe.provide("fabric_sense.measurement_sheet");
 			indicator: "red",
 			alert: true
 		});
+	};
+
+	ns.update_pricing_summary = async function update_pricing_summary(frm) {
+		/**
+		 * Fetch and render pricing summary table in the Pricing Summary section.
+		 * 
+		 * @param {Object} frm - Frappe form object
+		 */
+		if (!frm) {
+			return;
+		}
+
+		if (frm.is_new() || !frm.doc.name) {
+			// Clear pricing summary if form is new or not saved
+			if (frm.fields_dict && frm.fields_dict.pricing_summary) {
+				frm.set_value("pricing_summary", "");
+			}
+			return;
+		}
+
+		if (!frm.doc.customer) {
+			// Clear pricing summary if no customer
+			if (frm.fields_dict && frm.fields_dict.pricing_summary) {
+				frm.set_value("pricing_summary", "");
+			}
+			return;
+		}
+
+		// Check if field exists
+		if (!frm.fields_dict || !frm.fields_dict.pricing_summary) {
+			return;
+		}
+
+		try {
+			frappe.call({
+				method: "fabric_sense.fabric_sense.doctype.measurement_sheet.measurement_sheet.get_pricing_summary",
+				args: {
+					measurement_sheet_name: frm.doc.name,
+				},
+				callback: function(r) {
+					if (r.message) {
+						const data = r.message;
+						let html = "";
+
+						if (data.error) {
+							html = `<div class="alert alert-warning" style="padding: 10px; margin: 10px 0;">
+								<strong>Warning:</strong> ${frappe.utils.escape_html(data.error)}
+							</div>`;
+						} else if (data.items && data.items.length > 0) {
+							// Build HTML table - always show all columns
+							html = `<div style="overflow-x: auto;">
+								<table class="table table-bordered" style="width: 100%; margin: 10px 0; border-collapse: collapse;">
+									<thead>
+										<tr style="background-color: #f8f9fa;">
+											<th style="padding: 8px; border: 1px solid #dee2e6; text-align: left;">Item Name</th>
+											<th style="padding: 8px; border: 1px solid #dee2e6; text-align: right;">Quantity</th>
+											<th style="padding: 8px; border: 1px solid #dee2e6; text-align: right;">Actual Rate</th>
+											<th style="padding: 8px; border: 1px solid #dee2e6; text-align: right;">Rate After Discount/Margin</th>
+											<th style="padding: 8px; border: 1px solid #dee2e6; text-align: right;">Amount</th>
+											<th style="padding: 8px; border: 1px solid #dee2e6; text-align: left;">Pricing Rule</th>
+										</tr>
+									</thead>
+									<tbody>`;
+
+							// Always display all items with all columns filled, even if no pricing rules apply
+							data.items.forEach((item) => {
+								// Ensure all values are properly formatted, defaulting to 0 or "-" if missing
+								const actualPrice = parseFloat(item.actual_price || 0);
+								const finalPrice = parseFloat(item.price_after_discount || 0);
+								const quantity = parseFloat(item.quantity || 0);
+								
+								// Calculate amount = quantity * rate after discount/margin
+								const amount = quantity * finalPrice;
+								
+								// Format values for display
+								const actualPriceFormatted = actualPrice.toFixed(2);
+								const finalPriceFormatted = finalPrice.toFixed(2);
+								const quantityFormatted = quantity.toFixed(2);
+								const amountFormatted = amount.toFixed(2);
+								
+								// Ensure all fields have values
+								const itemCode = item.item_code || "";
+								const itemName = item.item_name || item.item_code || "";
+								const itemGroup = item.item_group || "";
+								const pricingRule = item.pricing_rule || "-";
+								
+								html += `
+									<tr>
+										<td style="padding: 8px; border: 1px solid #dee2e6;">${frappe.utils.escape_html(itemName)}</td>
+										<td style="padding: 8px; border: 1px solid #dee2e6; text-align: right;">${quantityFormatted}</td>
+										<td style="padding: 8px; border: 1px solid #dee2e6; text-align: right;">${frappe.format(actualPriceFormatted, { fieldtype: "Currency" })}</td>
+										<td style="padding: 8px; border: 1px solid #dee2e6; text-align: right; font-weight: bold;">${frappe.format(finalPriceFormatted, { fieldtype: "Currency" })}</td>
+										<td style="padding: 8px; border: 1px solid #dee2e6; text-align: right; font-weight: bold;">${frappe.format(amountFormatted, { fieldtype: "Currency" })}</td>
+										<td style="padding: 8px; border: 1px solid #dee2e6;">${frappe.utils.escape_html(pricingRule)}</td>
+									</tr>`;
+							});
+
+							html += `</tbody></table></div>`;
+						} else {
+							// Show empty table with headers when no items found
+							html = `<div style="overflow-x: auto;">
+								<table class="table table-bordered" style="width: 100%; margin: 10px 0; border-collapse: collapse;">
+									<thead>
+										<tr style="background-color: #f8f9fa;">
+											<th style="padding: 8px; border: 1px solid #dee2e6; text-align: left;">Item Name</th>
+											<th style="padding: 8px; border: 1px solid #dee2e6; text-align: right;">Quantity</th>
+											<th style="padding: 8px; border: 1px solid #dee2e6; text-align: right;">Actual Rate</th>
+											<th style="padding: 8px; border: 1px solid #dee2e6; text-align: right;">Rate After Discount/Margin</th>
+											<th style="padding: 8px; border: 1px solid #dee2e6; text-align: right;">Amount</th>
+											<th style="padding: 8px; border: 1px solid #dee2e6; text-align: left;">Pricing Rule</th>
+										</tr>
+									</thead>
+									<tbody>
+										<tr>
+											<td colspan="6" style="padding: 10px; text-align: center; color: #6c757d;">
+												No material items found in measurement details.
+											</td>
+										</tr>
+									</tbody>
+								</table>
+							</div>`;
+						}
+
+						if (frm.fields_dict && frm.fields_dict.pricing_summary) {
+							// Ensure field is visible
+							frm.toggle_display("pricing_summary", true);
+							
+							// For HTML fields, we need to set the value and then update the wrapper
+							frm.set_value("pricing_summary", html);
+							
+							// Wait a bit for the value to be set, then update the wrapper directly
+							setTimeout(() => {
+								// Get the field wrapper and set HTML directly
+								const field = frm.fields_dict.pricing_summary;
+								
+								if (field) {
+									// Try different ways to set HTML content
+									if (field.$wrapper) {
+										// Clear and set HTML content
+										field.$wrapper.empty();
+										field.$wrapper.html(html);
+									}
+									
+									if (field.$input) {
+										field.$input.html(html);
+									}
+									
+									// Try finding the actual DOM element
+									const fieldSelector = `[data-fieldname="pricing_summary"]`;
+									const $fieldElement = $(fieldSelector);
+									if ($fieldElement.length > 0) {
+										// Find the HTML content area (usually a div inside)
+										const $contentArea = $fieldElement.find('.html-content, .form-control, .control-value, div').first();
+										if ($contentArea.length > 0) {
+											$contentArea.html(html);
+										} else {
+											// If no content area found, set on the field element itself
+											$fieldElement.html(html);
+										}
+									}
+								}
+								
+								// Check if field is visible
+								const $fieldEl = $(`[data-fieldname="pricing_summary"]`);
+								if ($fieldEl.length > 0) {
+									const isVisible = $fieldEl.is(':visible');
+									if (!isVisible) {
+										$fieldEl.show();
+									}
+								}
+							}, 100);
+							
+							// Refresh the field to ensure it renders
+							frm.refresh_field("pricing_summary");
+							
+							// Recalculate totals with discounted prices after pricing summary is rendered
+							// Use a callback to ensure pricing summary data is available
+							setTimeout(() => {
+								ns.calculate_totals(frm);
+							}, 300);
+						}
+					}
+				},
+				error: function(err) {
+					if (frm.fields_dict && frm.fields_dict.pricing_summary) {
+						const errorHtml = `<div class="alert alert-danger" style="padding: 10px; margin: 10px 0;">
+							<strong>Error:</strong> Failed to load pricing summary. ${err.message || "Please try again."}
+						</div>`;
+						frm.set_value("pricing_summary", errorHtml);
+						frm.refresh_field("pricing_summary");
+					}
+				},
+			});
+		} catch (error) {
+			// Silently handle errors
+		}
 	};
 })(fabric_sense.measurement_sheet);

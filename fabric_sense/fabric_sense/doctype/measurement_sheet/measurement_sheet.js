@@ -5,6 +5,21 @@ frappe.require("/assets/fabric_sense/js/helpers/measurement_sheet_helpers.js");
 
 const msHelper = fabric_sense.measurement_sheet;
 
+// Debounce timer for pricing summary updates
+let pricingSummaryTimer = null;
+
+// Function to update pricing summary with debouncing
+const updatePricingSummaryDebounced = (frm) => {
+	if (pricingSummaryTimer) {
+		clearTimeout(pricingSummaryTimer);
+	}
+	pricingSummaryTimer = setTimeout(() => {
+		if (msHelper.update_pricing_summary) {
+			msHelper.update_pricing_summary(frm);
+		}
+	}, 500); // 500ms debounce
+};
+
 // Toggle order type dependent fields (project on parent, pattern/service charges on child rows)
 const toggle_order_type_fields = (frm) => {
 	const is_fitting = frm.doc.order_type === "Fitting";
@@ -93,6 +108,11 @@ frappe.ui.form.on("Measurement Sheet", {
 
 			frm._child_table_initialized = true;
 		}
+		
+		// Load pricing summary for existing documents
+		if (!frm.is_new() && frm.doc.name) {
+			updatePricingSummaryDebounced(frm);
+		}
 	},
 
 	// When Customer changes, clear Project and re-apply query filter
@@ -111,6 +131,8 @@ frappe.ui.form.on("Measurement Sheet", {
 		msHelper.clearItemRateCache?.();
 		// Clear stock cache as well
 		msHelper.clearStockCache?.();
+		// Update pricing summary when customer changes
+		updatePricingSummaryDebounced(frm);
 	},
 
 	project(frm) {
@@ -128,6 +150,11 @@ frappe.ui.form.on("Measurement Sheet", {
 		msHelper.clearItemRateCache?.();
 		msHelper.clearStockCache?.();
 		toggle_order_type_fields(frm);
+		
+		// Ensure pricing_summary field is visible
+		if (frm.fields_dict && frm.fields_dict.pricing_summary) {
+			frm.toggle_display("pricing_summary", true);
+		}
 
 		// Keep Project filtered by Customer on refresh as well and exclude projects already assigned to other measurement sheets
 		frm.set_query("project", () => ({
@@ -238,10 +265,6 @@ frappe.ui.form.on("Measurement Sheet", {
 			});
 
 			if (items_to_refresh.length > 0) {
-				console.log(
-					"Auto-refreshing prices for items with zero rates:",
-					items_to_refresh.length
-				);
 				items_to_refresh.forEach((item) => {
 					frm._force_refresh_item_price(item.row, item.field, item.rate_field);
 				});
@@ -272,7 +295,6 @@ frappe.ui.form.on("Measurement Sheet", {
 				if (final_rate > 0) {
 					frappe.model.set_value(row.doctype, row.name, rate_field, final_rate);
 					msHelper.calculate_row_amounts(frm, row.doctype, row.name);
-					console.log(`Force updated ${field} rate to ${final_rate}`);
 				}
 			});
 		};
@@ -284,8 +306,6 @@ frappe.ui.form.on("Measurement Sheet", {
 				return;
 			}
 
-			console.log(`Aggressive fetch starting for item: ${item_code}, customer: ${customer || 'None'}`);
-
 			// Use our custom server method that respects price list restrictions
 			frappe.call({
 				method: "fabric_sense.fabric_sense.doctype.measurement_sheet.measurement_sheet.get_fresh_item_price",
@@ -296,27 +316,29 @@ frappe.ui.form.on("Measurement Sheet", {
 				callback: function (r) {
 					if (r.message && r.message.price_list_rate > 0) {
 						const rate = r.message.price_list_rate;
-						console.log(
-							`Fresh server method found price for ${item_code}: ${rate} (source: ${r.message.source})`
-						);
 						callback(rate);
 					} else {
-						console.log(
-							`No price found for ${item_code} (source: ${
-								r.message ? r.message.source : "unknown"
-							})`
-						);
 						callback(0);
 					}
 				},
 				error: function (err) {
-					console.error(`Error fetching price for ${item_code}:`, err);
 					callback(0);
 				},
 			});
 		};
 
 		msHelper.calculate_totals(frm);
+		// Update pricing summary on refresh
+		// Also call directly after a short delay to ensure it runs
+		if (!frm.is_new() && frm.doc.name && frm.doc.customer) {
+			updatePricingSummaryDebounced(frm);
+			// Also try direct call after a delay to ensure field exists
+			setTimeout(() => {
+				if (msHelper.update_pricing_summary && frm.fields_dict && frm.fields_dict.pricing_summary) {
+					msHelper.update_pricing_summary(frm);
+				}
+			}, 500);
+		}
 	},
 
 	onload_post_render(frm) {
@@ -611,6 +633,8 @@ frappe.ui.form.on("Measurement Detail", {
 			: 0;
 		await frappe.model.set_value(cdt, cdn, "fabric_rate", rate || 0);
 		msHelper.calculate_row_amounts(frm, cdt, cdn);
+		// Update pricing summary
+		updatePricingSummaryDebounced(frm);
 
 		// Check stock availability when fabric is selected
 		if (row.fabric_selected) {
@@ -634,6 +658,8 @@ frappe.ui.form.on("Measurement Detail", {
 
 	async fabric_qty(frm, cdt, cdn) {
 		msHelper.calculate_row_amounts(frm, cdt, cdn);
+		// Update pricing summary
+		updatePricingSummaryDebounced(frm);
 
 		// Check stock availability when fabric_qty changes
 		const row = locals[cdt][cdn];
@@ -657,18 +683,14 @@ frappe.ui.form.on("Measurement Detail", {
 
 	lining_qty(frm, cdt, cdn) {
 		msHelper.calculate_row_amounts(frm, cdt, cdn);
+		// Update pricing summary
+		updatePricingSummaryDebounced(frm);
 	},
 
 	fabric_rate(frm, cdt, cdn) {
 		msHelper.calculate_row_amounts(frm, cdt, cdn);
-	},
-
-	lining_qty(frm, cdt, cdn) {
-		msHelper.calculate_row_amounts(frm, cdt, cdn);
-	},
-
-	fabric_rate(frm, cdt, cdn) {
-		msHelper.calculate_row_amounts(frm, cdt, cdn);
+		// Update pricing summary
+		updatePricingSummaryDebounced(frm);
 	},
 
 	async lining(frm, cdt, cdn) {
@@ -676,6 +698,8 @@ frappe.ui.form.on("Measurement Detail", {
 		const rate = row.lining ? await msHelper.fetch_item_rate(row.lining, null, frm) : 0;
 		await frappe.model.set_value(cdt, cdn, "lining_rate", rate || 0);
 		msHelper.calculate_row_amounts(frm, cdt, cdn);
+		// Update pricing summary
+		updatePricingSummaryDebounced(frm);
 	},
 
 	lining_rate(frm, cdt, cdn) {
@@ -696,10 +720,14 @@ frappe.ui.form.on("Measurement Detail", {
 			});
 		}
 		msHelper.calculate_row_amounts(frm, cdt, cdn);
+		// Update pricing summary
+		updatePricingSummaryDebounced(frm);
 	},
 
 	lead_rope_qty(frm, cdt, cdn) {
 		msHelper.calculate_row_amounts(frm, cdt, cdn);
+		// Update pricing summary
+		updatePricingSummaryDebounced(frm);
 	},
 
 	lead_rope_rate(frm, cdt, cdn) {
@@ -721,6 +749,8 @@ frappe.ui.form.on("Measurement Detail", {
 			});
 		}
 		msHelper.calculate_row_amounts(frm, cdt, cdn);
+		// Update pricing summary
+		updatePricingSummaryDebounced(frm);
 	},
 
 	track_rod_type(frm, cdt, cdn) {
@@ -729,6 +759,8 @@ frappe.ui.form.on("Measurement Detail", {
 
 	track_rod_qty(frm, cdt, cdn) {
 		msHelper.calculate_row_amounts(frm, cdt, cdn);
+		// Update pricing summary
+		updatePricingSummaryDebounced(frm);
 	},
 
 	track_rod_rate(frm, cdt, cdn) {
@@ -746,6 +778,8 @@ frappe.ui.form.on("Measurement Detail", {
 			await frappe.model.set_value(cdt, cdn, "selection_rate", 0);
 		}
 		msHelper.calculate_row_amounts(frm, cdt, cdn);
+		// Update pricing summary
+		updatePricingSummaryDebounced(frm);
 	},
 
 	async pattern(frm, cdt, cdn) {
@@ -771,7 +805,6 @@ frappe.ui.form.on("Measurement Detail", {
 				}
 			}
 		} catch (error) {
-			console.error("Error in pattern selection:", error);
 			frappe.model.set_value(cdt, cdn, {
 				stitching_pattern: null,
 				_stitching_pattern_auto_filled: false,
@@ -827,6 +860,8 @@ frappe.ui.form.on("Measurement Detail", {
 
 	measurement_details_add(frm, cdt, cdn) {
 		msHelper.apply_item_filters(frm);
+		// Update pricing summary when row is added
+		updatePricingSummaryDebounced(frm);
 		setTimeout(() => {
 			const row = locals[cdt][cdn];
 			if (
@@ -841,9 +876,13 @@ frappe.ui.form.on("Measurement Detail", {
 
 	measurement_details_remove(frm) {
 		msHelper.calculate_totals(frm);
+		// Update pricing summary when row is removed
+		updatePricingSummaryDebounced(frm);
 	},
 
 	amount(frm) {
 		msHelper.calculate_totals(frm);
+		// Update pricing summary when amount changes
+		updatePricingSummaryDebounced(frm);
 	},
 });

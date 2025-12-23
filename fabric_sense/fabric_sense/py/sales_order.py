@@ -418,11 +418,15 @@ def is_service_item(item_code):
             return False
 
         # Check if item_group is "Stitching" or "Labour" (root level)
-        if item_group in ["Stitching", "Labour"]:
+        if item_group in ["Stitching", "Labour", "Delivery Charge"]:
             return True
 
         # Check if item_group starts with "Stitching/" or "Labour/" (child groups stored as paths)
-        if item_group.startswith("Stitching/") or item_group.startswith("Labour/"):
+        if (
+            item_group.startswith("Stitching/")
+            or item_group.startswith("Labour/")
+            or item_group.startswith("Delivery Charge/")
+        ):
             return True
 
         # Check parent_item_group if item_group is a child
@@ -437,14 +441,14 @@ def is_service_item(item_code):
                     and item_group_doc.parent_item_group
                 ):
                     parent_group = item_group_doc.parent_item_group
-                    if parent_group in ["Stitching", "Labour"]:
+                    if parent_group in ["Stitching", "Labour", "Delivery Charge"]:
                         return True
         except Exception:
             # If getting Item Group fails, try to extract parent from path
             # For paths like "Stitching/Curtain Stitching", check if first part is Stitching or Labour
             if "/" in item_group:
                 parent_from_path = item_group.split("/")[0]
-                if parent_from_path in ["Stitching", "Labour"]:
+                if parent_from_path in ["Stitching", "Labour", "Delivery Charge"]:
                     return True
 
         return False

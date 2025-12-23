@@ -83,15 +83,21 @@ def make_payment_entry(source_name, target_doc=None):
         target.paid_from = frappe.get_cached_value(
             "Company", company, "default_cash_account"
         )
-        target.paid_to = frappe.get_cached_value(
-            "Employee", source.contractor, "payroll_payable_account"
-        )
-
-        if not target.paid_to:
-            # Fallback to default payable account
+        
+        # Use payable_account from Contractor Payment History if available
+        if source.payable_account:
+            target.paid_to = source.payable_account
+        else:
+            # Fallback to employee's payroll payable account
             target.paid_to = frappe.get_cached_value(
-                "Company", company, "default_payable_account"
+                "Employee", source.contractor, "payroll_payable_account"
             )
+            
+            if not target.paid_to:
+                # Final fallback to default payable account
+                target.paid_to = frappe.get_cached_value(
+                    "Company", company, "default_payable_account"
+                )
 
         # Set account currencies - get from Account doctype
         if target.paid_from:
@@ -217,15 +223,24 @@ def make_payment_entry_for_multiple(
         target.paid_from = frappe.get_cached_value(
             "Company", company, "default_cash_account"
         )
-        target.paid_to = frappe.get_cached_value(
-            "Employee", contractor, "payroll_payable_account"
+        
+        # Use payable_account from first Contractor Payment History record if available
+        first_record_payable = frappe.get_cached_value(
+            "Contractor Payment History", source_name, "payable_account"
         )
-
-        if not target.paid_to:
-            # Fallback to default payable account
+        if first_record_payable:
+            target.paid_to = first_record_payable
+        else:
+            # Fallback to employee's payroll payable account
             target.paid_to = frappe.get_cached_value(
-                "Company", company, "default_payable_account"
+                "Employee", contractor, "payroll_payable_account"
             )
+            
+            if not target.paid_to:
+                # Final fallback to default payable account
+                target.paid_to = frappe.get_cached_value(
+                    "Company", company, "default_payable_account"
+                )
 
         # Set account currencies - get from Account doctype
         if target.paid_from:

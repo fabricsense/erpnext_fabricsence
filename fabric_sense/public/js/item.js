@@ -14,6 +14,9 @@ frappe.ui.form.on("Item", {
 		
 		// Set GST Rate field mandatory based on HSN/SAC field mandatory status
 		update_gst_rate_mandatory(frm);
+		
+		// Fetch and display valuation rate from Bin table
+		update_valuation_rate_display(frm);
 	},
 
 	custom_vendor_code_selection: function (frm) {
@@ -385,6 +388,44 @@ function update_gst_rate_mandatory(frm) {
 				// Set GST Rate field mandatory based on HSN/SAC mandatory status
 				frm.set_df_property("custom_gst_rate", "reqd", hsn_mandatory ? 1 : 0);
 				frm.refresh_field("custom_gst_rate");
+			}
+		}
+	});
+}
+
+function update_valuation_rate_display(frm) {
+	// Fetch and display valuation rate from Bin table
+	// This ensures the valuation rate is always up-to-date on form load
+	
+	if (!frm.doc.name || frm.doc.__islocal) {
+		// Skip for new items
+		return;
+	}
+	
+	frappe.call({
+		method: "frappe.client.get_list",
+		args: {
+			doctype: "Bin",
+			filters: {
+				item_code: frm.doc.name
+			},
+			fields: ["warehouse", "actual_qty", "valuation_rate", "stock_value"],
+			limit: 1,
+			order_by: "modified desc"
+		},
+		callback: function (r) {
+			if (r.message && r.message.length > 0) {
+				let bin = r.message[0];
+				console.log("Fetched valuation rate from Bin:", bin.valuation_rate);
+				
+				// Update the valuation_rate field display
+				if (bin.valuation_rate && bin.valuation_rate > 0) {
+					frm.doc.valuation_rate = bin.valuation_rate;
+					frm.refresh_field("valuation_rate");
+					console.log("Updated valuation rate display to:", bin.valuation_rate);
+				}
+			} else {
+				console.log("No Bin record found for item:", frm.doc.name);
 			}
 		}
 	});

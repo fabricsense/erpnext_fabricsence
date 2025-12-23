@@ -1,4 +1,46 @@
 frappe.ui.form.on("Payment Entry", {
+	setup: function (frm) {
+		// Early setup for forms created from Contractor Payment History
+		if (frm.is_new()) {
+			// Set a flag to track contractor payment forms
+			frm._is_contractor_payment = false;
+			
+			// Check if this form is being created from contractor payment history
+			// This will be set by the mapping process
+			setTimeout(() => {
+				if (frm.doc.custom_contractor_payment_history || frm.doc.custom_is_group_payment) {
+					frm._is_contractor_payment = true;
+					console.log('Payment Entry: Detected contractor payment form in setup');
+				}
+			}, 100);
+		}
+	},
+
+	onload: function (frm) {
+		// Additional check during form load for contractor payments
+		if (frm.is_new() && (frm.doc.custom_contractor_payment_history || frm.doc.custom_is_group_payment)) {
+			console.log('Payment Entry: Contractor payment form loaded, ensuring Save button...');
+			
+			// Immediate check
+			setTimeout(() => {
+				if (!frm.page.btn_primary || !frm.page.btn_primary.is(':visible')) {
+					frm.page.set_primary_action(__('Save'), function() {
+						frm.save();
+					}, 'fa fa-floppy-o');
+				}
+			}, 300);
+			
+			// Secondary check
+			setTimeout(() => {
+				if (!frm.page.btn_primary || !frm.page.btn_primary.is(':visible')) {
+					frm.page.set_primary_action(__('Save'), function() {
+						frm.save();
+					}, 'fa fa-floppy-o');
+				}
+			}, 800);
+		}
+	},
+
 	refresh: function (frm) {
 		// Handle auto-filling from Contractor Payment History
 		if (
@@ -8,22 +50,70 @@ frappe.ui.form.on("Payment Entry", {
 			// Ensure the form is properly set up for contractor payments
 			frm.set_df_property("party_type", "read_only", 1);
 			frm.set_df_property("party", "read_only", 1);
+			
+			// Additional Save button check specifically for contractor payments
+			if (frm.is_new()) {
+				// Extra safeguard for contractor payment forms - check after a longer delay
+				setTimeout(() => {
+					if (!frm.page.btn_primary || !frm.page.btn_primary.is(':visible')) {
+						console.log('Payment Entry: Contractor payment form missing Save button, creating...');
+						frm.page.set_primary_action(__('Save'), function() {
+							frm.save();
+						}, 'fa fa-floppy-o');
+					}
+				}, 1500); // Longer delay for contractor payment forms
+			}
 		}
 
 		// Ensure Save button is visible for new documents
 		if (frm.is_new()) {
-			// Force show the save button if it's missing
-			setTimeout(() => {
-				if (!frm.page.btn_primary || frm.page.btn_primary.is(':hidden')) {
-					frm.page.set_primary_action(__('Save'), function() {
-						frm.save();
-					}, 'fa fa-floppy-o');
-				}
-			}, 100);
+			// Force show the save button if it's missing - multiple attempts with increasing delays
+			const ensureSaveButton = (attempt = 1) => {
+				const maxAttempts = 5;
+				const delay = attempt * 200; // 200ms, 400ms, 600ms, 800ms, 1000ms
+				
+				setTimeout(() => {
+					// Check if Save button exists and is visible
+					let saveButtonExists = false;
+					
+					// Check for primary action button
+					if (frm.page.btn_primary && frm.page.btn_primary.length > 0 && frm.page.btn_primary.is(':visible')) {
+						saveButtonExists = true;
+					}
+					
+					// Also check for any visible Save button in page actions
+					if (!saveButtonExists) {
+						const saveButtons = frm.page.page_actions.find('button:contains("Save"), .btn-primary:contains("Save")');
+						if (saveButtons.length > 0 && saveButtons.is(':visible')) {
+							saveButtonExists = true;
+						}
+					}
+					
+					// If no Save button found, create one
+					if (!saveButtonExists) {
+						console.log(`Payment Entry: Creating Save button (attempt ${attempt})`);
+						frm.page.set_primary_action(__('Save'), function() {
+							frm.save();
+						}, 'fa fa-floppy-o');
+						
+						// Also ensure it's visible
+						setTimeout(() => {
+							if (frm.page.btn_primary) {
+								frm.page.btn_primary.show();
+							}
+						}, 50);
+					}
+					
+					// If still no button and we haven't reached max attempts, try again
+					if (!saveButtonExists && attempt < maxAttempts) {
+						ensureSaveButton(attempt + 1);
+					}
+				}, delay);
+			};
+			
+			// Start the process
+			ensureSaveButton();
 		}
-
-		// Set custom filter for paid_to field when payment type is Pay and party type is Employee
-		set_paid_to_account_filter(frm);
 
 		// Remove existing custom buttons to prevent duplicates
 		// Only remove custom buttons, not standard ERPNext buttons like Save
@@ -294,21 +384,6 @@ frappe.ui.form.on("Payment Entry", {
 		}
 	},
 
-	payment_type: function (frm) {
-		// Update paid_to account filter when payment type changes
-		set_paid_to_account_filter(frm);
-	},
-
-	party_type: function (frm) {
-		// Update paid_to account filter when party type changes
-		set_paid_to_account_filter(frm);
-	},
-
-	party: function (frm) {
-		// Update paid_to account filter when party changes
-		set_paid_to_account_filter(frm);
-	},
-
 	paid_amount: function (frm) {
 		// Auto-distribute paid amount across tasks when paid_amount changes
 		distribute_paid_amount_across_tasks(frm);
@@ -437,27 +512,5 @@ function calculate_outstanding(cdt, cdn) {
 	if (row.grand_total !== undefined && row.allocated !== undefined) {
 		let outstanding = flt(row.grand_total) - flt(row.allocated);
 		frappe.model.set_value(cdt, cdn, "outstanding", outstanding);
-	}
-}
-
-// Function to set custom filter for paid_to account field
-function set_paid_to_account_filter(frm) {
-	// Only apply custom filter when payment type is "Pay" and party type is "Employee"
-	if (frm.doc.payment_type === "Pay" && frm.doc.party_type === "Employee" && frm.doc.party) {
-		// Set custom filter to include both Payable and Expense Account types
-		frm.set_query("paid_to", function() {
-			return {
-				"filters": [
-					["Account", "account_type", "in", ["Payable", "Expense Account"]],
-					["Account", "is_group", "=", 0],
-					["Account", "company", "=", frm.doc.company]
-				]
-			};
-		});
-	} else {
-		// Clear custom filter for other scenarios - let ERPNext handle default filters
-		frm.set_query("paid_to", function() {
-			return {};
-		});
 	}
 }

@@ -368,12 +368,14 @@
    "label": "Fitting Charge"
   },
   {
+   "depends_on": "eval:['Window Curtains','Roman Blinds'].includes(doc.product_type)",
    "fieldname": "stitching_charge",
    "fieldtype": "Currency",
    "label": "Stitching Charge",
    "read_only": 1
   },
   {
+   "depends_on": "eval:['Window Curtains','Roman Blinds'].includes(doc.product_type)",
    "fieldname": "stiching_pattern",
    "fieldtype": "Link",
    "label": "Stiching Pattern",
