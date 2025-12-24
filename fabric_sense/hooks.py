@@ -113,6 +113,10 @@ doc_events = {
     "Stock Ledger Entry": {
         "on_submit": "fabric_sense.fabric_sense.py.reorder_monitoring.check_reorder_level_on_stock_change",
     },
+    "Item Price": {
+        # Ensure Item Price.item_name always equals item_code
+        "validate": "fabric_sense.fabric_sense.py.item_price_custom.force_item_price_name_to_code",
+    },
 }
 # Svg Icons
 # ------------------

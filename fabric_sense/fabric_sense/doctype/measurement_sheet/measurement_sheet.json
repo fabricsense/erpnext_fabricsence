@@ -25,6 +25,7 @@
   "measurement_details_section",
   "measurement_details",
   "summary_section",
+  "pricing_summary",
   "total_amount",
   "rejection_reason"
  ],
@@ -144,6 +145,11 @@
    "fieldname": "summary_section",
    "fieldtype": "Section Break",
    "label": "Summary"
+  },
+  {
+   "fieldname": "pricing_summary",
+   "fieldtype": "HTML",
+   "label": "Pricing Summary"
   },
   {
    "fieldname": "total_amount",

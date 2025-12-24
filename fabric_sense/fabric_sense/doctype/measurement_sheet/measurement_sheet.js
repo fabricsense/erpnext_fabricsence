@@ -72,6 +72,20 @@ frappe.ui.form.on("Measurement Sheet", {
 		frm.refresh_field("measurement_details");
 		toggle_order_type_fields(frm);
 
+		// When starting a brand new Measurement Sheet, proactively clear any stale
+		// pricing_summary HTML that might be left in the DOM from the previous doc.
+		if (frm.is_new() && frm.fields_dict && frm.fields_dict.pricing_summary) {
+			const field = frm.fields_dict.pricing_summary;
+			try {
+				if (field.$wrapper && field.$wrapper.length) {
+					field.$wrapper.empty();
+				}
+			} catch (e) {
+				// ignore DOM errors
+			}
+			frm.set_value("pricing_summary", "");
+		}
+
 		// Ensure Project is filtered by the selected Customer on load and excludes projects already assigned to other measurement sheets
 		frm.set_query("project", () => ({
 			query: "fabric_sense.fabric_sense.doctype.measurement_sheet.measurement_sheet.get_available_projects",

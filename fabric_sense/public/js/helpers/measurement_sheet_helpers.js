@@ -1343,6 +1343,14 @@ frappe.provide("fabric_sense.measurement_sheet");
 		if (frm.is_new() || !frm.doc.name) {
 			// Clear pricing summary if form is new or not saved
 			if (frm.fields_dict && frm.fields_dict.pricing_summary) {
+				const field = frm.fields_dict.pricing_summary;
+				try {
+					if (field.$wrapper && field.$wrapper.length) {
+						field.$wrapper.empty();
+					}
+				} catch (e) {
+					// ignore DOM errors
+				}
 				frm.set_value("pricing_summary", "");
 			}
 			return;
@@ -1351,6 +1359,14 @@ frappe.provide("fabric_sense.measurement_sheet");
 		if (!frm.doc.customer) {
 			// Clear pricing summary if no customer
 			if (frm.fields_dict && frm.fields_dict.pricing_summary) {
+				const field = frm.fields_dict.pricing_summary;
+				try {
+					if (field.$wrapper && field.$wrapper.length) {
+						field.$wrapper.empty();
+					}
+				} catch (e) {
+					// ignore DOM errors
+				}
 				frm.set_value("pricing_summary", "");
 			}
 			return;
